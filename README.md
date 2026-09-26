@@ -11,85 +11,9 @@ Code for three experiments (the write-up with figures is a separate report docum
 
 Everything was run on Windows 10, RTX 3070 Ti (8 GB VRAM), 16 GB RAM. Several stock code paths do not fit or
 crash on such a machine; the workarounds are part of the code (`scripts_local/`) and are described below.
-`results/` holds the metrics that were obtained (one clip per part, single run, single seed).
-
-## Results in short
-
-| Part | Result |
-| --- | --- |
-| 1. DAVIS `bmx-trees` | ADE 0.381 m, FDE 0.727 m, PWT 8.6 % (`results/part1_metrics.json`) |
-| 2. ShareRobot | model predicted zero motion for a replicated single-frame history; 2D path metrics are reported as a "does not move" baseline (`results/part2_metrics.json`) |
-| 3. DaS | 480x720, 49 frames, NF4, 10 steps, CFG off: rider follows the commanded trajectory (slope 6.4 vs 9.5 px/frame, r = 0.85), image quality degrades after ~12 frames (`results/part3_metrics.json`) |
-
-## Expected results
-
-Images and videos below are what the scripts produce for the three examples (numbers from `results/`; small deviations
-are normal across GPUs / dtypes, DaS is seeded with 42). Rebuild them with `python scripts_local/make_expected_media.py`.
-
-### Part 1: DAVIS `bmx-trees`
-
-Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
-
-![input frame and query points](docs/expected/part1_input_points.jpg)
-
-Predicted (magenta) vs real (green, dashed) 3D tracks of the same points, both projected into the t0 camera (canvas
-extended because the rider leaves the t0 field of view). Expected: same direction and speed, the prediction covers ~3.1 m
-of the real ~3.6 m in 30 frames (ADE 0.38 m, FDE 0.73 m).
-
-![predicted vs real trajectories](docs/expected/part1_predicted_vs_real.jpg)
-
-The trails growing over the 30 predicted frames:
-
-[![prediction vs real trajectories](docs/expected/part1_prediction_vs_real.gif)](docs/expected/part1_prediction_vs_real.mp4)
-
-Real future frames t0+1 / +10 / +20 / +30 (green: real 2D track in that frame, magenta x: prediction projected into the t0
-camera). The camera follows the rider, so the prediction leaves the frame while the real rider stays in the centre; this is why
-the metrics are computed in 3D, not on these projections.
-
-![real future frames](docs/expected/part1_real_future_frames.jpg)
-
-### Part 2: ShareRobot `bridge#episode_25423` ("reach for the spoon")
-
-Input frame with the 8 query points on the gripper (star = the annotated start point).
-
-![ShareRobot input](docs/expected/part2_input_points.jpg)
-
-Annotated 2D gripper path (green). Expected with the replicated single-frame history: the predicted trajectory collapses to the
-start point (zero motion, so the predicted path is not visible), and the 2D metrics equal the "does not move" baseline
-(mean 199 px, 25 % of the image diagonal).
-
-![ShareRobot prediction vs annotation](docs/expected/part2_predicted_vs_annotated.jpg)
-
-The only real future frame (frame_15): the gripper has moved towards the spoon.
-
-![ShareRobot real frame_15](docs/expected/part2_real_frame15.jpg)
-
-### Part 3: DaS driven by the predicted trajectory
-
-Rows: real continuation, tracking video built from the prediction, DaS with the MolmoMotion trajectory, DaS with a static
-(no-motion) tracking video; columns: frames 0 / 12 / 24 / 36 / 48. Expected: the rider follows the commanded motion to the
-right and is gone by frame ~24, the picture degrades after ~12 frames (NF4, 10 steps, CFG off); in the static control the rider
-stays in place while the background dissolves.
-
-![DaS frames](docs/expected/part3_das_frames.jpg)
-
-Videos (480x720, 49 frames, 8 fps; animated previews here, the full-quality mp4 opens on click).
-
-All four panels side by side (real continuation, control signal, DaS with the MolmoMotion trajectory, DaS with the no-motion control):
-
-[![real / control signal / DaS trajectory / DaS static control](docs/expected/part3_comparison_2x2.gif)](docs/expected/part3_comparison_2x2.mp4)
-
-DaS with the MolmoMotion trajectory:
-
-[![DaS with the MolmoMotion trajectory](docs/expected/part3_das_trajectory.gif)](docs/expected/part3_das_trajectory.mp4)
-
-DaS with the no-motion control:
-
-[![DaS with the no-motion control](docs/expected/part3_das_static_control.gif)](docs/expected/part3_das_static_control.mp4)
-
-The control signal (tracking video) built from the prediction:
-
-[![tracking video](docs/expected/part3_tracking_video.gif)](docs/expected/part3_tracking_video.mp4)
+Each part below lists how to run it and, directly under it, the expected results (one clip per part, single run,
+single seed; the metrics are in `results/`, small deviations are normal across GPUs / dtypes, DaS is seeded with 42).
+The images and videos are rebuilt by `python scripts_local/make_expected_media.py`.
 
 ## Setup
 
@@ -130,6 +54,30 @@ Metrics follow `launch_scripts/eval_pointmotionbench.py`: ADE, FDE, PWT at 1/2/5
 visible (point, frame) pairs only. `convert_ckpt_bf16.py` streams the fp32 checkpoint into bf16 shards without loading it
 whole (`torch.load` crashed on this machine); `lowmem_model.py` builds the model in bf16 and splits it between GPU and CPU.
 
+### Expected results (part 1)
+
+ADE 0.381 m, FDE 0.727 m, PWT 8.6 % (`results/part1_metrics.json`).
+
+Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
+
+![input frame and query points](docs/expected/part1_input_points.jpg)
+
+Predicted (magenta) vs real (green, dashed) 3D tracks of the same points, both projected into the t0 camera (canvas
+extended because the rider leaves the t0 field of view). Expected: same direction and speed, the prediction covers ~3.1 m
+of the real ~3.6 m in 30 frames.
+
+![predicted vs real trajectories](docs/expected/part1_predicted_vs_real.jpg)
+
+The trails growing over the 30 predicted frames (click for the mp4):
+
+[![prediction vs real trajectories](docs/expected/part1_prediction_vs_real.gif)](docs/expected/part1_prediction_vs_real.mp4)
+
+Real future frames t0+1 / +10 / +20 / +30 (green: real 2D track in that frame, magenta x: prediction projected into the t0
+camera). The camera follows the rider, so the prediction leaves the frame while the real rider stays in the centre; this is why
+the metrics are computed in 3D, not on these projections.
+
+![real future frames](docs/expected/part1_real_future_frames.jpg)
+
 ## Part 2: ShareRobot
 
 ```
@@ -141,6 +89,24 @@ python scripts_local/part2_visualize.py
 ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is estimated
 and the evaluation is coarse 2D path agreement (definitions in the docstrings). A history with real motion
 (`frame_0, frame_0, frame_15`) has not been run yet.
+
+### Expected results (part 2)
+
+The model predicts zero motion for a replicated single-frame history; the 2D path metrics are then a "does not move"
+baseline (`results/part2_metrics.json`).
+
+Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
+
+![ShareRobot input](docs/expected/part2_input_points.jpg)
+
+Annotated 2D gripper path (green). Expected: the predicted trajectory collapses to the start point (the predicted path is
+not visible), and the 2D metrics equal the baseline (mean 199 px, 25 % of the image diagonal).
+
+![ShareRobot prediction vs annotation](docs/expected/part2_predicted_vs_annotated.jpg)
+
+The only real future frame (frame_15): the gripper has moved towards the spoon.
+
+![ShareRobot real frame_15](docs/expected/part2_real_frame15.jpg)
 
 ## Part 3: DaS driven by the MolmoMotion prediction
 
@@ -175,6 +141,34 @@ What it takes to fit 8 GB VRAM / 16 GB RAM (all in `part3_run_das_lowvram.py`):
 * `torch.compile` is unwrapped (no Triton on Windows); the resolution cannot be changed (diffusers 0.32 refuses it for this model).
 
 Other files: `part3_diag_load.py`, `gpu_alloc_test.py`, `ram_selftest.py` are the small diagnostics used while debugging the above.
+
+### Expected results (part 3)
+
+480x720, 49 frames, 8 fps, NF4, 10 steps, CFG off, ~330 s and ~5.5 GB peak VRAM per clip. The rider follows the commanded
+trajectory (slope 6.4 vs 9.5 px/frame, r = 0.85) and is gone by frame ~24; image quality degrades after ~12 frames
+(`results/part3_metrics.json`).
+
+Rows: real continuation, tracking video built from the prediction, DaS with the MolmoMotion trajectory, DaS with a static
+(no-motion) tracking video; columns: frames 0 / 12 / 24 / 36 / 48. In the static control the rider stays in place while the
+background dissolves.
+
+![DaS frames](docs/expected/part3_das_frames.jpg)
+
+The same four panels as an animation (click for the mp4):
+
+[![real / control signal / DaS trajectory / DaS static control](docs/expected/part3_comparison_2x2.gif)](docs/expected/part3_comparison_2x2.mp4)
+
+DaS with the MolmoMotion trajectory:
+
+[![DaS with the MolmoMotion trajectory](docs/expected/part3_das_trajectory.gif)](docs/expected/part3_das_trajectory.mp4)
+
+DaS with the no-motion control:
+
+[![DaS with the no-motion control](docs/expected/part3_das_static_control.gif)](docs/expected/part3_das_static_control.mp4)
+
+The control signal (tracking video) built from the prediction:
+
+[![tracking video](docs/expected/part3_tracking_video.gif)](docs/expected/part3_tracking_video.mp4)
 
 ## Known limitations
 
