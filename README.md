@@ -21,6 +21,63 @@ crash on such a machine; the workarounds are part of the code (`scripts_local/`)
 | 2. ShareRobot | model predicted zero motion for a replicated single-frame history; 2D path metrics are reported as a "does not move" baseline (`results/part2_metrics.json`) |
 | 3. DaS | 480x720, 49 frames, NF4, 10 steps, CFG off: rider follows the commanded trajectory (slope 6.4 vs 9.5 px/frame, r = 0.85), image quality degrades after ~12 frames (`results/part3_metrics.json`) |
 
+## Expected results
+
+Images and videos below are what the scripts produce for the three examples (numbers from `results/`; small deviations
+are normal across GPUs / dtypes, DaS is seeded with 42). Rebuild them with `python scripts_local/make_expected_media.py`.
+
+### Part 1: DAVIS `bmx-trees`
+
+Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
+
+![input frame and query points](docs/expected/part1_input_points.jpg)
+
+Predicted (magenta) vs real (green, dashed) 3D tracks of the same points, both projected into the t0 camera (canvas
+extended because the rider leaves the t0 field of view). Expected: same direction and speed, the prediction covers ~3.1 m
+of the real ~3.6 m in 30 frames (ADE 0.38 m, FDE 0.73 m).
+
+![predicted vs real trajectories](docs/expected/part1_predicted_vs_real.jpg)
+
+Video of the trails growing over the 30 predicted frames: [part1_prediction_vs_real.mp4](docs/expected/part1_prediction_vs_real.mp4).
+
+Real future frames t0+1 / +10 / +20 / +30 (green: real 2D track in that frame, magenta x: prediction projected into the t0
+camera). The camera follows the rider, so the prediction leaves the frame while the real rider stays in the centre; this is why
+the metrics are computed in 3D, not on these projections.
+
+![real future frames](docs/expected/part1_real_future_frames.jpg)
+
+### Part 2: ShareRobot `bridge#episode_25423` ("reach for the spoon")
+
+Input frame with the 8 query points on the gripper (star = the annotated start point).
+
+![ShareRobot input](docs/expected/part2_input_points.jpg)
+
+Annotated 2D gripper path (green). Expected with the replicated single-frame history: the predicted trajectory collapses to the
+start point (zero motion, so the predicted path is not visible), and the 2D metrics equal the "does not move" baseline
+(mean 199 px, 25 % of the image diagonal).
+
+![ShareRobot prediction vs annotation](docs/expected/part2_predicted_vs_annotated.jpg)
+
+The only real future frame (frame_15): the gripper has moved towards the spoon.
+
+![ShareRobot real frame_15](docs/expected/part2_real_frame15.jpg)
+
+### Part 3: DaS driven by the predicted trajectory
+
+Rows: real continuation, tracking video built from the prediction, DaS with the MolmoMotion trajectory, DaS with a static
+(no-motion) tracking video; columns: frames 0 / 12 / 24 / 36 / 48. Expected: the rider follows the commanded motion to the
+right and is gone by frame ~24, the picture degrades after ~12 frames (NF4, 10 steps, CFG off); in the static control the rider
+stays in place while the background dissolves.
+
+![DaS frames](docs/expected/part3_das_frames.jpg)
+
+Videos (480x720, 49 frames, 8 fps):
+
+* [part3_comparison_2x2.mp4](docs/expected/part3_comparison_2x2.mp4): all four panels side by side
+* [part3_das_trajectory.mp4](docs/expected/part3_das_trajectory.mp4): DaS with the MolmoMotion trajectory
+* [part3_das_static_control.mp4](docs/expected/part3_das_static_control.mp4): DaS with the no-motion control
+* [part3_tracking_video.mp4](docs/expected/part3_tracking_video.mp4): the control signal built from the prediction
+
 ## Setup
 
 Third-party code is cloned next to the scripts (not vendored):
