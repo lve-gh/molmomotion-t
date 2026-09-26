@@ -1,0 +1,26 @@
+{
+ "clip": "davis bmx-trees",
+ "rerun_bit_identical_to_first_run": true,
+ "our_prediction": {
+  "ADE_m": 0.38136613368988037,
+  "FDE_m": 0.7268624901771545,
+  "PWT": 0.08558139534883721,
+  "visible_pairs": 215
+ },
+ "authors_released_prediction": {
+  "ADE_m": 0.2810022532939911,
+  "FDE_m": 0.5457006096839905,
+  "PWT": 0.11813953488372093,
+  "visible_pairs": 215
+ },
+ "our_vs_authors_mean_L2_m": 0.11369835585355759,
+ "generated_text": {
+  "numbers_ours": 1021,
+  "numbers_authors": 1021,
+  "identical_numbers": 369,
+  "mean_abs_diff_first_40": 1.35,
+  "mean_abs_diff_last_40": 61.925,
+  "first_divergence_ours": "cks coords=\"3.0 1 120 -11 -10 2 305 -405 -130 3 30",
+  "first_divergence_authors": "cks coords=\"3.0 1 121 -11 -10 2 307 -405 -130 3 31"
+ }
+}

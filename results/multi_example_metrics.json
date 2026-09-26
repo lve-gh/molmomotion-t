@@ -1,0 +1,33 @@
+{
+  "bmx-trees": {
+    "authors_prediction": {
+      "ADE_m": 0.2810022532939911,
+      "FDE_m": 0.5457006096839905,
+      "PWT": 0.11813953488372093,
+      "visible_pairs": 215
+    },
+    "our_prediction": {
+      "ADE_m": 0.38136613368988037,
+      "FDE_m": 0.7268624901771545,
+      "PWT": 0.08558139534883721,
+      "visible_pairs": 215
+    },
+    "our_vs_authors_mean_L2_m": 0.11369835585355759
+  },
+  "car-turn": {
+    "authors_prediction": {
+      "ADE_m": 0.26156482100486755,
+      "FDE_m": 0.7532429695129395,
+      "PWT": 0.2125,
+      "visible_pairs": 240
+    }
+  },
+  "flamingo": {
+    "authors_prediction": {
+      "ADE_m": 0.09323913604021072,
+      "FDE_m": 0.14528082311153412,
+      "PWT": 0.43000000000000005,
+      "visible_pairs": 240
+    }
+  }
+}

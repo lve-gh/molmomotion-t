@@ -56,7 +56,17 @@ whole (`torch.load` crashed on this machine); `lowmem_model.py` builds the model
 
 ### Expected results (part 1)
 
-ADE 0.381 m, FDE 0.727 m, PWT 8.6 % (`results/part1_metrics.json`).
+ADE 0.381 m, FDE 0.727 m, PWT 8.6 % (`results/part1_metrics.json`). The run is deterministic (a second run reproduces the
+prediction bit for bit).
+
+**Comparison with the authors' released prediction** for the same clip (`examples/data/predictions_h3.jsonl`, score it with
+`python scripts_local/eval_cached_predictions.py`): ADE 0.281 m, FDE 0.546 m, PWT 11.8 %, i.e. better than ours; the two
+predictions differ by 11 cm on average. The generated texts have the same structure (1021 numbers each) but differ from the first
+coordinate on (120 vs 121, 305 vs 307) and drift apart along the sequence (mean difference of the quantized values: 1.4 over the
+first 40 numbers, 62 over the last 40), which points to numerical noise (GPU, kernels, bf16 accumulation) amplified by
+autoregressive decoding rather than to a bug. Consequence: single-clip numbers depend on the hardware and should not be read as
+model quality (`results/part1_vs_authors_prediction.json`, `results/multi_example_metrics.json`). Several clips are run in one
+process with `scripts_local/run_examples.py`.
 
 Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
 

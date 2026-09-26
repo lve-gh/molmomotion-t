@@ -34,47 +34,53 @@ def load_lowmem(ckpt_dir: str, gpu_gib: float = 6.0, cpu_gib: float = 10.0):
         max_sequence_length=cfg.llm.max_sequence_length,
     )
 
+    # Build the model on the meta device (no host RAM), then place every tensor straight on its target device
+    # (GPU or CPU) from the bf16 shards: host RAM peak = the CPU-resident part (~4 GB) + one shard, instead of the
+    # whole ~9.7 GB bf16 model.
+    import json
+    from accelerate import init_empty_weights, dispatch_model, infer_auto_device_map
+    from accelerate.utils import set_module_tensor_to_device
+
     prev = torch.get_default_dtype()
     torch.set_default_dtype(torch.bfloat16)
     try:
-        model = MolmoMotion(public_cfg, internal_config=cfg)
+        with init_empty_weights():
+            model = MolmoMotion(public_cfg, internal_config=cfg)
     finally:
         torch.set_default_dtype(prev)
-    print("built bf16 model on CPU", flush=True)
-
-    import json
-    bf16_dir = Path(str(ckpt_dir) + "-bf16")
-    index = json.loads((bf16_dir / "index.json").read_text())
-    missing_all, unexpected_all = [], []
-    for fn in sorted(set(index.values())):
-        shard = torch.load(bf16_dir / fn, map_location="cpu", weights_only=True)
-        m, u = model._internal.load_state_dict(shard, strict=False)
-        unexpected_all += u
-        del shard
-        gc.collect()
-    all_keys = set(model._internal.state_dict().keys())
-    missing = sorted(all_keys - set(index.keys()))
-    unexpected = unexpected_all
-    print("loaded shards; missing:", len(missing), "unexpected:", len(unexpected), flush=True)
-    if missing:
-        print("  missing sample:", missing[:8])
-    if unexpected:
-        print("  unexpected sample:", unexpected[:5])
-    sd = None
-    del sd
-    gc.collect()
-    model._internal.eval()
-
-    from accelerate import dispatch_model, infer_auto_device_map
     internal = model._internal
-    no_split = sorted({type(m).__name__ for n, m in internal.named_modules()
-                       if type(m).__name__.endswith("Block") or "Block" in type(m).__name__})
+    print("built bf16 model on the meta device", flush=True)
+
+    no_split = sorted({type(m).__name__ for n, m in internal.named_modules() if "Block" in type(m).__name__})
     print("no_split classes:", no_split, flush=True)
     device_map = infer_auto_device_map(
         internal, max_memory={0: f"{gpu_gib}GiB", "cpu": f"{cpu_gib}GiB"},
         no_split_module_classes=no_split, dtype=torch.bfloat16)
     n_gpu = sum(1 for v in device_map.values() if v == 0)
     print(f"device_map: {n_gpu}/{len(device_map)} top-level groups on GPU", flush=True)
+    keys = sorted(device_map.keys(), key=len, reverse=True)
+
+    def dev_for(name):
+        return next(device_map[k] for k in keys if k == "" or name == k or name.startswith(k + "."))
+
+    bf16_dir = Path(str(ckpt_dir) + "-bf16")
+    index = json.loads((bf16_dir / "index.json").read_text())
+    placed = 0
+    for fn in sorted(set(index.values())):
+        shard = torch.load(bf16_dir / fn, map_location="cpu", weights_only=True)
+        for k, v in shard.items():
+            dev = dev_for(k)
+            set_module_tensor_to_device(internal, k, "cpu" if dev == "disk" else dev, value=v.to(torch.bfloat16)
+                                        if v.is_floating_point() else v)
+            placed += 1
+        del shard
+        gc.collect()
+    left = [n for n, prm in internal.named_parameters() if prm.device.type == "meta"]
+    all_keys = set(internal.state_dict().keys())
+    print(f"placed {placed} tensors; params still on meta: {len(left)} {left[:3]}; "
+          f"keys missing from checkpoint index: {len(all_keys - set(index.keys()))}", flush=True)
+    assert not left, "some parameters were never loaded"
+    internal.eval()
     model._internal = dispatch_model(internal, device_map=device_map)
     attach_progress(model)
     return model
