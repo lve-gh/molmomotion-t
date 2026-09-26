@@ -38,6 +38,14 @@ def reencode(src: Path, name: str):
                     "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(OUT / f"{name}.mp4")], check=True)
 
 
+def to_gif(name: str, width: int, fps: int):
+    """Animated preview (GitHub strips <video> from READMEs, GIFs render inline)."""
+    vf = (f"fps={fps},scale={width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];"
+          "[b][p]paletteuse=dither=bayer:bayer_scale=4")
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", str(OUT / f"{name}.mp4"), "-vf", vf, "-loop", "0",
+                    str(OUT / f"{name}.gif")], check=True)
+
+
 def write_video(frames, name, fps):
     tmp = OUT / f"_{name}.mp4"
     imageio.mimsave(tmp, frames, fps=fps, codec="libx264", macro_block_size=2,
@@ -131,6 +139,10 @@ def main():
     reencode(P3 / "generated_static_480x720_cfg1_10steps_offload.mp4", "part3_das_static_control")
     reencode(P3 / "tracking_video.mp4", "part3_tracking_video")
     part3_comparison()
+    for name, w, fps in [("part1_prediction_vs_real", 760, 8), ("part3_comparison_2x2", 720, 6),
+                         ("part3_das_trajectory", 400, 6), ("part3_das_static_control", 400, 6),
+                         ("part3_tracking_video", 400, 6)]:
+        to_gif(name, w, fps)
     for p in sorted(OUT.iterdir()):
         print(f"{p.name:40s} {p.stat().st_size / 1024:8.0f} KB")
 
