@@ -38,7 +38,9 @@ of the real ~3.6 m in 30 frames (ADE 0.38 m, FDE 0.73 m).
 
 ![predicted vs real trajectories](docs/expected/part1_predicted_vs_real.jpg)
 
-Video of the trails growing over the 30 predicted frames: [part1_prediction_vs_real.mp4](docs/expected/part1_prediction_vs_real.mp4).
+The trails growing over the 30 predicted frames:
+
+<video src="https://github.com/lve-gh/molmomotion-t/raw/main/docs/expected/part1_prediction_vs_real.mp4" controls muted loop playsinline width="720"></video>
 
 Real future frames t0+1 / +10 / +20 / +30 (green: real 2D track in that frame, magenta x: prediction projected into the t0
 camera). The camera follows the rider, so the prediction leaves the frame while the real rider stays in the centre; this is why
@@ -71,12 +73,23 @@ stays in place while the background dissolves.
 
 ![DaS frames](docs/expected/part3_das_frames.jpg)
 
-Videos (480x720, 49 frames, 8 fps):
+Videos (480x720, 49 frames, 8 fps).
 
-* [part3_comparison_2x2.mp4](docs/expected/part3_comparison_2x2.mp4): all four panels side by side
-* [part3_das_trajectory.mp4](docs/expected/part3_das_trajectory.mp4): DaS with the MolmoMotion trajectory
-* [part3_das_static_control.mp4](docs/expected/part3_das_static_control.mp4): DaS with the no-motion control
-* [part3_tracking_video.mp4](docs/expected/part3_tracking_video.mp4): the control signal built from the prediction
+All four panels side by side (real continuation, control signal, DaS with the MolmoMotion trajectory, DaS with the no-motion control):
+
+<video src="https://github.com/lve-gh/molmomotion-t/raw/main/docs/expected/part3_comparison_2x2.mp4" controls muted loop playsinline width="960"></video>
+
+DaS with the MolmoMotion trajectory:
+
+<video src="https://github.com/lve-gh/molmomotion-t/raw/main/docs/expected/part3_das_trajectory.mp4" controls muted loop playsinline width="480"></video>
+
+DaS with the no-motion control:
+
+<video src="https://github.com/lve-gh/molmomotion-t/raw/main/docs/expected/part3_das_static_control.mp4" controls muted loop playsinline width="480"></video>
+
+The control signal (tracking video) built from the prediction:
+
+<video src="https://github.com/lve-gh/molmomotion-t/raw/main/docs/expected/part3_tracking_video.mp4" controls muted loop playsinline width="480"></video>
 
 ## Setup
 
