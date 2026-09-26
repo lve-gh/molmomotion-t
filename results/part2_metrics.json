@@ -1,0 +1,18 @@
+{
+  "waypoint_to_path_px": [
+    101.53840637207031,
+    212.4287872314453,
+    282.4378662109375
+  ],
+  "waypoint_to_path_px_mean": 198.8016815185547,
+  "waypoint_to_path_frac_of_diag_mean": 0.24850210547447205,
+  "endpoint_px": 282.4378662109375,
+  "endpoint_frac_of_diag": 0.3530473327636719,
+  "direction_cosine_similarity": 0.0,
+  "inference_seconds": 3663.6847083000002,
+  "gpu": "NVIDIA GeForce RTX 3070 Ti",
+  "checkpoint": "allenai/MolmoMotion-4B-H3-F30 (local model.pt, H3 pseudo-history)",
+  "action": "reach for the spoon",
+  "future_horizon": 30,
+  "what_this_measures": "Coarse 2D pixel-space path agreement between the predicted projected trajectory of the anchor query point and ShareRobot's 4-waypoint annotated gripper path. NOT a time-aligned per-frame 3D error (no such GT exists for ShareRobot); see compute_2d_path_metrics docstring for exact definitions."
+}

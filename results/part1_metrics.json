@@ -1,0 +1,19 @@
+{
+  "ADE_m": 0.38136613368988037,
+  "FDE_m": 0.7268624901771545,
+  "PWT": 0.08558139534883721,
+  "PWT_per_threshold": {
+    "0.01": 0.0,
+    "0.02": 0.0,
+    "0.05": 0.037209302325581395,
+    "0.1": 0.07906976744186046,
+    "0.2": 0.3116279069767442
+  },
+  "n_points_visible_frames": 215,
+  "inference_seconds": 5894.228438499966,
+  "gpu": "NVIDIA GeForce RTX 3070 Ti",
+  "checkpoint": "allenai/MolmoMotion-4B-H3-F30 (local model.pt)",
+  "video": "bmx-trees",
+  "object": "bike_rider",
+  "future_horizon": 30
+}
