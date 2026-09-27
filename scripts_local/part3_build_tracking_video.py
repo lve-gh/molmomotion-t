@@ -71,8 +71,9 @@ def convex_hull_mask(points_2d, shape_hw, dilate_px=25):
 
 
 def resample_time(curve, n_out):
-    """curve: (F_in, 2) -> (n_out, 2), linear interp, hold last value if
-    n_out spans past F_in's covered duration."""
+    """curve: (F_in, 2) or (P, F_in, 2) -> same with n_out frames, linear interpolation over the whole clip."""
+    if curve.ndim == 3:
+        return np.stack([resample_time(c, n_out) for c in curve])
     f_in = curve.shape[0]
     x_in = np.linspace(0, 1, f_in)
     x_out = np.linspace(0, 1, n_out)
@@ -83,7 +84,7 @@ def resample_time(curve, n_out):
 
 
 def build_tracking_video(t0_image_path: Path, pred_npz_path: Path, out_mp4: Path,
-                          device="cpu", height=480, width=720, static=False):
+                          device="cpu", height=480, width=720, static=False, zero_start=True, per_point=False):
     """Same geometry as demo.py's MoGe single-image branch: MoGe point cloud
     (camera space, normalized intrinsics) -> move the masked points -> project
     with MoGe's intrinsics (CameraMotionGenerator.w2s_moge, identity poses)
@@ -100,7 +101,11 @@ def build_tracking_video(t0_image_path: Path, pred_npz_path: Path, out_mp4: Path
     data = np.load(pred_npz_path)
     pred, points_2d_at_t0, K = data["pred"], data["points_2d_at_t0"], data["intrinsics"]
     pred_2d = project(pred, K)  # (P, F, 2) in ORIGINAL image pixels (t0 camera)
-    mean_disp = (pred_2d - points_2d_at_t0[:, None, :]).mean(axis=0)  # (F, 2)
+    disp_pts = pred_2d - points_2d_at_t0[:, None, :]                   # (P, F, 2) displacement of every point
+    if zero_start:
+        # the first predicted frame is t0+1 and already displaced; the DaS clip must start at t0 without any shift
+        disp_pts = np.concatenate([np.zeros_like(disp_pts[:, :1]), disp_pts], axis=1)
+    mean_disp = disp_pts.mean(axis=0)                                   # (F(+1), 2)
 
     img = Image.open(t0_image_path).convert("RGB")
     H0, W0 = img.height, img.width
@@ -122,16 +127,31 @@ def build_tracking_video(t0_image_path: Path, pred_npz_path: Path, out_mp4: Path
     obj_mask = convex_hull_mask(p0, (Hh, Ww)) & mask_valid
     disp = mean_disp.copy(); disp[:, 0] *= sx; disp[:, 1] *= sy
     curve = resample_time(disp, NUM_FRAMES)       # (49, 2) pixels
+    dp = disp_pts.copy(); dp[..., 0] *= sx; dp[..., 1] *= sy
+    curve_pts = resample_time(dp, NUM_FRAMES)     # (P, 49, 2) pixels
     if static:                                     # no-trajectory baseline: nothing moves
         curve = curve * 0.0
+        curve_pts = curve_pts * 0.0
 
     tracks = pts.unsqueeze(0).repeat(NUM_FRAMES, 1, 1, 1).reshape(NUM_FRAMES, -1, 3).clone()
     sel = torch.from_numpy(obj_mask.reshape(-1))
     z = tracks[0, sel, 2]
-    for t in range(NUM_FRAMES):
-        du, dv = float(curve[t, 0]), float(curve[t, 1])
-        tracks[t, sel, 0] += du / Ww * z / fxn
-        tracks[t, sel, 1] += dv / Hh * z / fyn
+    if per_point:
+        # every masked pixel follows the inverse-distance-weighted displacement of the 8 query points
+        ys, xs = np.nonzero(obj_mask)
+        d2 = (xs[:, None] - p0[None, :, 0]) ** 2 + (ys[:, None] - p0[None, :, 1]) ** 2
+        w = 1.0 / (d2 + 25.0)
+        w = torch.from_numpy((w / w.sum(1, keepdims=True)).astype(np.float32))           # (N, P)
+        cp = torch.from_numpy(curve_pts.astype(np.float32))                                # (P, T, 2)
+        field = torch.einsum("np,ptc->tnc", w, cp)                                         # (T, N, 2)
+        for t in range(NUM_FRAMES):
+            tracks[t, sel, 0] += field[t, :, 0] / Ww * z / fxn
+            tracks[t, sel, 1] += field[t, :, 1] / Hh * z / fyn
+    else:
+        for t in range(NUM_FRAMES):
+            du, dv = float(curve[t, 0]), float(curve[t, 1])
+            tracks[t, sel, 0] += du / Ww * z / fxn
+            tracks[t, sel, 1] += dv / Hh * z / fyn
 
     cam = CameraMotionGenerator(None, device="cpu")
     cam.set_intr(intr)
@@ -147,7 +167,7 @@ def build_tracking_video(t0_image_path: Path, pred_npz_path: Path, out_mp4: Path
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
     ImageSequenceClip(list(frames), fps=8).write_videofile(str(out_mp4), codec="libx264", fps=8, logger=None)
     img_r.save(out_mp4.parent / f"t0_{height}x{width}.png")
-    np.save(out_mp4.parent / f"motion_curve_px_{height}x{width}{'_static' if static else ''}.npy", curve)
+    np.save(out_mp4.parent / f"{out_mp4.stem}_motion_curve_px.npy", curve)
     print("Wrote tracking video to", out_mp4, "| masked points:", int(obj_mask.sum()),
           "| max shift px:", float(np.abs(curve).max()))
 
@@ -162,5 +182,11 @@ if __name__ == "__main__":
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--width", type=int, default=720)
     ap.add_argument("--static", action="store_true", help="baseline: zero motion tracking video")
+    ap.add_argument("--keep-start-offset", action="store_true",
+                    help="old behaviour: frame 0 of the tracking video already carries the first predicted displacement")
+    ap.add_argument("--per-point", action="store_true",
+                    help="move every masked pixel with the inverse-distance-weighted displacement of the query points "
+                         "instead of the mean displacement of all 8 points")
     args = ap.parse_args()
-    build_tracking_video(Path(args.t0_image), Path(args.pred_npz), Path(args.out), device=args.device, height=args.height, width=args.width, static=args.static)
+    build_tracking_video(Path(args.t0_image), Path(args.pred_npz), Path(args.out), device=args.device, height=args.height,
+                         width=args.width, static=args.static, zero_start=not args.keep_start_offset, per_point=args.per_point)

@@ -1,0 +1,16 @@
+{
+  "waypoint_to_path_px": [
+    104.4238510131836,
+    215.08108520507812,
+    284.8143005371094
+  ],
+  "waypoint_to_path_px_mean": 201.4397430419922,
+  "waypoint_to_path_frac_of_diag_mean": 0.25179967284202576,
+  "endpoint_px": 413.1488952636719,
+  "endpoint_frac_of_diag": 0.5164361190795899,
+  "direction_cosine_similarity": -0.624718189239502,
+  "future_horizon": 32,
+  "label": "H1-F32, real history = 1 frame",
+  "predicted_anchor_displacement_px": 169.04263305664062,
+  "predicted_3d_path_length_m_point0": 0.4402061402797699
+}

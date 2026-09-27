@@ -1,0 +1,122 @@
+{
+ "teacher_forcing_vs_authors_text": [
+  {
+   "case": "bmx-trees, authors text, example JPEG frames",
+   "answer_tokens": 1200,
+   "mismatches": 40,
+   "match_rate": 0.9667,
+   "first_mismatch_token": 24,
+   "max_logit_gap": 0.3164,
+   "median_logit_gap": 0.0156
+  },
+  {
+   "case": "bmx-trees, authors text, original DAVIS JPEG frames",
+   "answer_tokens": 1200,
+   "mismatches": 32,
+   "match_rate": 0.9733,
+   "first_mismatch_token": 31,
+   "max_logit_gap": 0.2666,
+   "median_logit_gap": 0.0312
+  },
+  {
+   "case": "bmx-trees, authors text, frames from re-encoded mp4",
+   "answer_tokens": 1200,
+   "mismatches": 45,
+   "match_rate": 0.9625,
+   "first_mismatch_token": 31,
+   "max_logit_gap": 0.3652,
+   "median_logit_gap": 0.0234
+  },
+  {
+   "case": "car-turn, authors text, example JPEG frames",
+   "answer_tokens": 1200,
+   "mismatches": 40,
+   "match_rate": 0.9667,
+   "first_mismatch_token": 11,
+   "max_logit_gap": 0.2656,
+   "median_logit_gap": 0.0312
+  },
+  {
+   "case": "flamingo, authors text, example JPEG frames",
+   "answer_tokens": 1200,
+   "mismatches": 40,
+   "match_rate": 0.9667,
+   "first_mismatch_token": 22,
+   "max_logit_gap": 0.3047,
+   "median_logit_gap": 0.0312
+  },
+  {
+   "case": "car-turn, OUR OWN generated text (control: same weights/GPU, full pass vs cached decoding)",
+   "answer_tokens": 1200,
+   "mismatches": 10,
+   "match_rate": 0.9917,
+   "first_mismatch_token": 17,
+   "max_logit_gap": 0.0312,
+   "median_logit_gap": 0.0156
+  }
+ ],
+ "runs": {
+  "davis_bmx_trees": {
+   "inference_seconds": 4557.5626518999925,
+   "metrics_ours": {
+    "ADE_m": 0.38136613368988037,
+    "FDE_m": 0.7268624901771545,
+    "PWT": 0.08558139534883721,
+    "visible_pairs": 215
+   },
+   "metrics_authors": {
+    "ADE_m": 0.2810022532939911,
+    "FDE_m": 0.5457006096839905,
+    "PWT": 0.11813953488372093,
+    "visible_pairs": 215
+   },
+   "our_vs_authors_mean_L2_m": 0.11369835585355759,
+   "text_common_prefix_chars": 24
+  },
+  "davis_car_turn": {
+   "inference_seconds": 3943.8589992999996,
+   "metrics_ours": {
+    "ADE_m": 0.5055901408195496,
+    "FDE_m": 1.5819424390792847,
+    "PWT": 0.16833333333333333,
+    "visible_pairs": 240
+   },
+   "metrics_authors": {
+    "ADE_m": 0.26156482100486755,
+    "FDE_m": 0.7532429695129395,
+    "PWT": 0.2125,
+    "visible_pairs": 240
+   },
+   "our_vs_authors_mean_L2_m": 0.3029370605945587,
+   "text_common_prefix_chars": 24
+  },
+  "davis_flamingo": {
+   "inference_seconds": 4318.0298573,
+   "metrics_ours": {
+    "ADE_m": 0.09364932030439377,
+    "FDE_m": 0.14540055394172668,
+    "PWT": 0.42000000000000004,
+    "visible_pairs": 240
+   },
+   "metrics_authors": {
+    "ADE_m": 0.09323913604021072,
+    "FDE_m": 0.14528082311153412,
+    "PWT": 0.43000000000000005,
+    "visible_pairs": 240
+   },
+   "our_vs_authors_mean_L2_m": 0.043545499444007874,
+   "text_common_prefix_chars": 35
+  },
+  "egodex_ball_base": {
+   "inference_seconds": 3763.479154200002,
+   "our_vs_authors_mean_L2_m": 0.01180581096559763,
+   "text_common_prefix_chars": 443
+  },
+  "egodex_clean_surface": {
+   "inference_seconds": 4065.3775071,
+   "our_vs_authors_mean_L2_m": 0.019161518663167953,
+   "text_common_prefix_chars": 36
+  }
+ },
+ "note": "Teacher forcing: the authors' generated text is appended to our prompt and one forward pass gives, for each answer token, our argmax and the logit gap between it and the authors' token."
+}

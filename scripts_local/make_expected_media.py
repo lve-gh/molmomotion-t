@@ -126,14 +126,18 @@ def part3_comparison():
 
 
 def main():
+    P3B = ROOT / "outputs" / "part3b"
     for src, name in [(P1 / "fig1_input_points.png", "part1_input_points"),
                       (P1 / "fig2_pred_vs_gt.png", "part1_predicted_vs_real"),
                       (P1 / "fig4_future_frames_strip.png", "part1_real_future_frames"),
                       (P2 / "fig1_input_points.png", "part2_input_points"),
                       (P2 / "fig2_pred_vs_gt.png", "part2_predicted_vs_annotated"),
                       (P2 / "fig3_frame15_comparison.png", "part2_real_frame15"),
-                      (P3 / "fig_part3_frames.png", "part3_das_frames")]:
-        to_jpg(src, name)
+                      (P3 / "fig_part3_frames.png", "part3_das_frames"),
+                      (ROOT / "outputs" / "h1" / "fig_h1_pred_vs_annotated.png", "part2_h1_predicted_vs_annotated"),
+                      (P3B / "fig_part3b_ablation_frames.png", "part3_ablation_frames")]:
+        if src.exists():
+            to_jpg(src, name)
     part1_animation()
     reencode(P3 / "generated_tracked_480x720_cfg1_10steps_offload.mp4", "part3_das_trajectory")
     reencode(P3 / "generated_static_480x720_cfg1_10steps_offload.mp4", "part3_das_static_control")

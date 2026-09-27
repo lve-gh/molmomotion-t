@@ -68,6 +68,20 @@ autoregressive decoding rather than to a bug. Consequence: single-clip numbers d
 model quality (`results/part1_vs_authors_prediction.json`, `results/multi_example_metrics.json`). Several clips are run in one
 process with `scripts_local/run_examples.py`.
 
+**Confirming the noise hypothesis** (`scripts_local/diag_teacher_forcing.py`): the authors' released generated text is appended
+to our prompt and scored in a single teacher-forced forward pass, so every position is compared under identical conditioning
+instead of letting earlier autoregressive mistakes compound. On `bmx-trees`, `car-turn` and `flamingo` alike, our argmax token
+matches theirs **96.7 % of the time**, and at every mismatch the logit gap between our top token and theirs is tiny (median
+0.03 nats, max 0.32) — the kind of margin bf16 rounding differences can flip. Re-running the same test with the authors' own
+JPEG frames, the original DAVIS frames, and frames re-decoded from an intermediate mp4 shifts which handful of positions
+mismatch but not the overall picture (`results/noise_diagnosis.json`). `flamingo` — the clip where the model is most confident
+— has our metrics essentially equal to the authors' (ADE 0.094 vs 0.093 m); `car-turn`, the least confident, has the largest
+gap. This is consistent with genuine floating-point noise (different GPU / kernels / the CPU-offloaded bf16 path here vs. the
+authors' presumably all-GPU setup) being amplified frame by frame during greedy autoregressive decoding, not a bug in the
+inputs. `scripts_local/extra_metrics.py` adds normalized ADE/FDE, an in-tolerance-fraction, Fréchet distance, DTW, direction
+cosine and speed ratio for the same clips, ours vs. the authors' prediction (`results/extra_metrics.json`); by direction cosine
+both predictions get the heading right (0.93-0.99) even where the magnitude/timing has drifted.
+
 Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
 
 ![input frame and query points](docs/expected/part1_input_points.jpg)
@@ -97,13 +111,25 @@ python scripts_local/part2_visualize.py
 ```
 
 ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is estimated
-and the evaluation is coarse 2D path agreement (definitions in the docstrings). A history with real motion
-(`frame_0, frame_0, frame_15`) has not been run yet.
+and the evaluation is coarse 2D path agreement (definitions in the docstrings).
 
 ### Expected results (part 2)
 
 The model predicts zero motion for a replicated single-frame history; the 2D path metrics are then a "does not move"
 baseline (`results/part2_metrics.json`).
+
+**With real (non-replicated) history**: the H3 checkpoint needs 3 history frames, so the zero-motion result above could be an
+artifact of feeding it 3 copies of the same frame instead of genuine motion. `MolmoMotion-4B-H1-F32` needs only 1 history
+frame, so it can be run on the single real ShareRobot frame directly (`scripts_local/run_examples.py --ckpt
+checkpoints/MolmoMotion-4B-H1-F32 --future 32 --out outputs/h1 --example-dirs data/sharerobot_example`, ~58 min, scored with
+`scripts_local/part2_score_h1.py`). It now predicts real motion (net displacement ~169 px, 3D path length 0.44 m for the
+anchor point — not zero), which confirms the zero-motion result in part 2 above is specifically a replicated-history artifact,
+not the model failing outright on ShareRobot. The direction is wrong, though (`direction_cosine_similarity = -0.62`, i.e.
+closer to opposite than to the annotated path) and the path-agreement numbers stay close to the H3 baseline
+(`results/part2_h1_metrics.json`) — with only one frame of history the model has no way to tell which direction the gripper
+is already moving in, so it is essentially guessing.
+
+![ShareRobot H1-F32 prediction vs annotation](docs/expected/part2_h1_predicted_vs_annotated.jpg)
 
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
@@ -180,9 +206,28 @@ The control signal (tracking video) built from the prediction:
 
 [![tracking video](docs/expected/part3_tracking_video.gif)](docs/expected/part3_tracking_video.mp4)
 
+**Ablations** (`scripts_local/part3b_analyze.py`, `results/part3_ablations.json`): `part3_build_tracking_video.py` now starts
+every tracking video at frame 0 with zero displacement by default (pass `--keep-start-offset` for the old behaviour), and
+`--per-point` replaces the single averaged 2D shift with an inverse-distance-weighted field of the 8 points' individual
+displacements — on this clip the two motion fields are nearly identical (Pearson r of tracked-vs-commanded dx: 0.912 mean vs.
+0.913 per-point) since the 8 query points move together. The real finding is in steps/CFG: **more steps and higher CFG make
+this NF4 + block-offloaded setup worse, not better.** 10 steps / CFG 1.0 tracks the commanded motion best (r = 0.91, RMS error
+71 px); at 20 steps / CFG 1.0 the rider barely moves (slope 2.1 vs. a commanded 10.0 px/frame, r = 0.25) and stray white
+artifacts appear in the background; at the full paper configuration (50 steps, CFG 6.0, ~27 min/clip here) both the
+trajectory-conditioned and the static-control clips degrade into colour-shifted, low-detail frames by the second half of the
+clip (Laplacian variance of the last 5 frames jumps to 312 / 383 vs. 80-90 for the first 5 — noise, not real sharpness) and
+the tracked run's motion correlation goes *negative* (r = -0.32). We did not identify a single root cause (candidates: the
+NF4 quantization error compounding over more denoising steps, the block-offload path handling the tracking branch
+differently at CFG > 1 since it then runs the forward pass twice per step, or the model's own behaviour at high CFG on a
+480x720 tracking-conditioned clip); it is reported as observed rather than explained.
+
+![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
+
 ## Known limitations
 
-* One clip per part, one seed; the full DaS configuration (50 steps, CFG 6.0) and ablations (NF4 / steps / CFG separately) were not run.
+* One clip per part, one seed.
 * The part 3 control is DaS with a static tracking video, not plain CogVideoX-I2V.
-* The tracking video starts with the motion already offset by ~62 px (the first predicted step) instead of 0.
-* Part 2 uses a replicated single frame as history, so the input has zero velocity.
+* Higher steps/CFG were run as an ablation (see above) but do not give usable results in this setup; the "expected results"
+  above use the light 10-step/CFG-1 configuration, which does.
+* Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above); with a single
+  real history frame the model predicts motion but not reliably in the right direction.

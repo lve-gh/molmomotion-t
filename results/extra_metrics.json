@@ -1,0 +1,92 @@
+{
+ "davis_bmx_trees": {
+  "ours": {
+   "ADE_m": 0.38136613368988037,
+   "FDE_m": 0.7268624901771545,
+   "PWT": 0.08558139534883721,
+   "normalized_ADE": 0.09846191108226776,
+   "normalized_FDE": 0.1876114159822464,
+   "within_10pct_of_path_length": 0.534900284900285,
+   "frechet_m": 0.7268624901771545,
+   "dtw_m": 0.29676326619361965,
+   "direction_cosine": 0.9890684187412262,
+   "speed_ratio": 0.7925938727770401,
+   "ADE_after_removing_mean_offset_m": 0.22909151017665863,
+   "points_scored": 8
+  },
+  "authors_released": {
+   "ADE_m": 0.2810022532939911,
+   "FDE_m": 0.5457006096839905,
+   "PWT": 0.11813953488372093,
+   "normalized_ADE": 0.0725337564945221,
+   "normalized_FDE": 0.1408115029335022,
+   "within_10pct_of_path_length": 0.6786731786731787,
+   "frechet_m": 0.5457006022334099,
+   "dtw_m": 0.2070735118265264,
+   "direction_cosine": 0.9946415573358536,
+   "speed_ratio": 0.8217082513006353,
+   "ADE_after_removing_mean_offset_m": 0.18894797563552856,
+   "points_scored": 8
+  }
+ },
+ "davis_car_turn": {
+  "ours": {
+   "ADE_m": 0.5055901408195496,
+   "FDE_m": 1.5819424390792847,
+   "PWT": 0.16833333333333333,
+   "normalized_ADE": 0.13904158771038055,
+   "normalized_FDE": 0.43778669834136963,
+   "within_10pct_of_path_length": 0.5291666666666667,
+   "frechet_m": 1.5819424539804459,
+   "dtw_m": 0.4330871998953323,
+   "direction_cosine": 0.9316392838954926,
+   "speed_ratio": 0.6261027350900061,
+   "ADE_after_removing_mean_offset_m": 0.4177509546279907,
+   "points_scored": 8
+  },
+  "authors_released": {
+   "ADE_m": 0.26156482100486755,
+   "FDE_m": 0.7532429695129395,
+   "PWT": 0.2125,
+   "normalized_ADE": 0.0747150257229805,
+   "normalized_FDE": 0.2152414619922638,
+   "within_10pct_of_path_length": 0.7375,
+   "frechet_m": 0.7558321636170149,
+   "dtw_m": 0.17852207964751868,
+   "direction_cosine": 0.9931523203849792,
+   "speed_ratio": 0.7854594064448585,
+   "ADE_after_removing_mean_offset_m": 0.20425614714622498,
+   "points_scored": 8
+  }
+ },
+ "davis_flamingo": {
+  "ours": {
+   "ADE_m": 0.09364932030439377,
+   "FDE_m": 0.14540055394172668,
+   "PWT": 0.42000000000000004,
+   "normalized_ADE": 0.11531386524438858,
+   "normalized_FDE": 0.15886259078979492,
+   "within_10pct_of_path_length": 0.5125,
+   "frechet_m": 0.18377742683514953,
+   "dtw_m": 0.08873829403455602,
+   "direction_cosine": 0.9275925830006599,
+   "speed_ratio": 0.5962714922296481,
+   "ADE_after_removing_mean_offset_m": 0.06320102512836456,
+   "points_scored": 8
+  },
+  "authors_released": {
+   "ADE_m": 0.09323913604021072,
+   "FDE_m": 0.14528082311153412,
+   "PWT": 0.43000000000000005,
+   "normalized_ADE": 0.11164332926273346,
+   "normalized_FDE": 0.15585128962993622,
+   "within_10pct_of_path_length": 0.5041666666666667,
+   "frechet_m": 0.1904355506412685,
+   "dtw_m": 0.08942593449561778,
+   "direction_cosine": 0.9196218252182007,
+   "speed_ratio": 0.5747722742217303,
+   "ADE_after_removing_mean_offset_m": 0.06278231739997864,
+   "points_scored": 8
+  }
+ }
+}

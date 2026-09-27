@@ -20,7 +20,14 @@
       "FDE_m": 0.7532429695129395,
       "PWT": 0.2125,
       "visible_pairs": 240
-    }
+    },
+    "our_prediction": {
+      "ADE_m": 0.5055901408195496,
+      "FDE_m": 1.5819424390792847,
+      "PWT": 0.16833333333333333,
+      "visible_pairs": 240
+    },
+    "our_vs_authors_mean_L2_m": 0.3029370605945587
   },
   "flamingo": {
     "authors_prediction": {
@@ -28,6 +35,13 @@
       "FDE_m": 0.14528082311153412,
       "PWT": 0.43000000000000005,
       "visible_pairs": 240
-    }
+    },
+    "our_prediction": {
+      "ADE_m": 0.09364932030439377,
+      "FDE_m": 0.14540055394172668,
+      "PWT": 0.42000000000000004,
+      "visible_pairs": 240
+    },
+    "our_vs_authors_mean_L2_m": 0.043545499444007874
   }
 }
