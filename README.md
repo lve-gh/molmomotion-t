@@ -292,6 +292,15 @@ tried (42: r = 0.91; 123: r = -0.69; 7: r = -0.35; 999: r = 0.12) — clearly go
 of this configuration, not the default, so "run a few seeds and keep the one that tracks well" is a legitimate practical
 strategy, but there is no configuration knob (steps, CFG, scheduler) that reliably gets you there in one try.
 
+**Does CFG rescue a bad seed? Not reliably.** Seed 123 was clearly bad at CFG 1.0 (r = -0.69, 10 steps). Raising CFG to 3.0
+(still 10 steps, same seed) improved it substantially, to r = 0.38 — a real effect, not noise. But raising CFG further to
+6.0 (the paper default) brought it back down to r = -0.42, worse than CFG 1.0. So CFG's effect is not monotonic either;
+combined with the step-count and seed results above, **no single knob we tried (steps, CFG, or scheduler choice) has a
+predictable, monotonic effect on tracking quality** in this NF4 + block-offload setup — the interaction between the
+scheduler's mandatory noise, NF4 quantization error, and the backloaded `use_dynamic_cfg` ramp (which the pipeline always
+applies, hardcoded, regardless of the `--guidance_scale` value passed in) leaves quality highly sensitive to the exact
+seed/steps/CFG combination in a way that looks close to chaotic rather than a clean quality/speed tradeoff.
+
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
 ![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)

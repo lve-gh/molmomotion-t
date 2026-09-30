@@ -117,5 +117,18 @@
    "r": 0.118
   },
   "summary": "Of 4 distinct seeds tried at 10 steps/CFG1/DPM, only 1 (seed 42) gave a clearly good result (r>0.9); the other 3 ranged from mediocre to negative (r -0.69 to 0.12). Good tracking is not the default outcome of this configuration -- it is what happened to come out of one particular seed we used throughout the rest of the report, and reproducibility testing shows that seed genuinely and reliably does well (not just hardware noise on top of noise), it is just not representative of the configuration in general."
+ },
+ "cfg_sweep_at_seed123_10steps": {
+  "cfg1.0": {
+   "r": -0.695
+  },
+  "cfg3.0": {
+   "r": 0.382,
+   "note": "best of the 3 CFG values tried on this seed"
+  },
+  "cfg6.0": {
+   "r": -0.416
+  },
+  "summary": "CFG does not monotonically help: on the same bad seed (123), CFG=3 partially rescued tracking (r went from -0.69 to +0.38) but CFG=6 went back to bad (-0.42). Combined with the step-count and seed sweeps above, no single knob (steps, CFG, or scheduler type) has a monotonic, reliable effect on how well the generated video tracks the commanded trajectory in this NF4 + block-offload setup -- quality is highly sensitive to the exact combination of seed/steps/CFG in a way that looks close to chaotic, not a simple quality/speed tradeoff."
  }
 }
