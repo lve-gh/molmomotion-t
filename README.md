@@ -89,6 +89,15 @@ all 3 clips. Match rate stayed in the same 95-97 % band with no consistent direc
 floating-point noise looks like (a real bug would plausibly point the same way on every clip), not a single fixable kernel
 choice (`results/noise_diagnosis.json`).
 
+**Two EgoDex clips** (egocentric hand-object manipulation, a different domain from DAVIS's outdoor tracking) confirm the
+same picture from a different angle: run with `scripts_local/run_examples.py --examples egodex_clean_surface
+egodex_ball_base` (no local ground truth for these, so only compared against the authors' released prediction), our
+output differs from theirs by a mean 1.2-1.9 cm — an order of magnitude smaller than the 11-30 cm gap on the DAVIS clips.
+This does not contradict the noise explanation (different clips can accumulate different amounts of drift over 30
+autoregressive steps depending on how confident/repetitive the model's per-token distribution is), but it does show the
+divergence is not a fixed property of our pipeline — it is clip-dependent, consistent with noise amplified unevenly by
+autoregression rather than a constant bias.
+
 Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
 
 ![input frame and query points](docs/expected/part1_input_points.jpg)
