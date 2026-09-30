@@ -82,6 +82,13 @@ inputs. `scripts_local/extra_metrics.py` adds normalized ADE/FDE, an in-toleranc
 cosine and speed ratio for the same clips, ours vs. the authors' prediction (`results/extra_metrics.json`); by direction cosine
 both predictions get the heading right (0.93-0.99) even where the magnitude/timing has drifted.
 
+**One more noise check** (`--force-math-attn` in `diag_teacher_forcing.py`): forcing PyTorch's exact, non-fused "math" SDPA
+kernel for the LLM's attention (instead of letting it auto-pick flash/efficient/cuDNN) reran the same teacher-forcing test on
+all 3 clips. Match rate stayed in the same 95-97 % band with no consistent direction — bmx-trees about the same (96.5 % vs.
+96.7 %), car-turn slightly better (96.9 %), flamingo slightly worse (95.6 %) — which is what genuine hardware/kernel
+floating-point noise looks like (a real bug would plausibly point the same way on every clip), not a single fixable kernel
+choice (`results/noise_diagnosis.json`).
+
 Input: frame t0 with the 8 query points on the rider (action: "A BMX rider rides through the trees").
 
 ![input frame and query points](docs/expected/part1_input_points.jpg)

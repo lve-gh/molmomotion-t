@@ -35,6 +35,10 @@ def main():
                     help="frame source (bmx-trees only for the last two): the example JPEGs, the original DAVIS JPEGs, "
                          "or frames decoded from an mp4 re-encoded like reconstruct_davis.py (outputs/diag/mp4)")
     ap.add_argument("--n-answer-tokens", type=int, default=1200)
+    ap.add_argument("--force-math-attn", action="store_true",
+                    help="force PyTorch's exact, non-fused 'math' SDPA backend everywhere instead of the default "
+                         "flash/efficient/cudnn kernel auto-selection -- tests whether the kernel choice itself is a "
+                         "source of the noise that diverges from the authors' released prediction")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -82,9 +86,15 @@ def main():
                       low_res_token_pooling=inputs.get("low_res_token_pooling"), token_pooling=inputs.get("token_pooling"),
                       num_images=inputs.get("num_images"), multimodal_type=inputs.get("multimodal_type"),
                       num_image_starts=inputs.get("num_image_starts"))
+    from contextlib import nullcontext
+    if a.force_math_attn:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+        attn_ctx = sdpa_kernel([SDPBackend.MATH])
+    else:
+        attn_ctx = nullcontext()
     t = time.perf_counter()
     with torch.inference_mode():
-        with torch.autocast("cuda", dtype=torch.bfloat16):
+        with torch.autocast("cuda", dtype=torch.bfloat16), attn_ctx:
             out = internal(full, attention_mask=attn, position_ids=pos, use_cache=False, **image_args)
     print(f"forward {time.perf_counter() - t:.0f}s, logits {tuple(out.logits.shape)} {out.logits.dtype}", flush=True)
     lg = out.logits[0, L - 1: L - 1 + len(ans)].float()
@@ -94,7 +104,8 @@ def main():
     tl = lg.gather(1, tgt[:, None])[:, 0]
     margin = (lg.max(-1).values - tl)  # >= 0; 0 when our argmax == target
     mism = (~match).nonzero()[:, 0].cpu().numpy()
-    res = {"example": a.example, "ckpt": a.ckpt, "source": src, "autocast": True, "frames": a.frames, "prompt_tokens": L,
+    res = {"example": a.example, "ckpt": a.ckpt, "source": src, "autocast": True, "frames": a.frames,
+           "force_math_attn": a.force_math_attn, "prompt_tokens": L,
            "answer_tokens": int(len(ans)), "match_rate": float(match.float().mean()), "n_mismatch": int(len(mism)),
            "first_mismatch": int(mism[0]) if len(mism) else None,
            "mismatch_margins": [round(float(margin[i]), 4) for i in mism[:200]],
