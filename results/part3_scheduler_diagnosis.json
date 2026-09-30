@@ -68,5 +68,37 @@
   "rms_err_px": 163.6024379247384,
   "laplacian_first5": 77.1008098937235,
   "laplacian_last5": 89.08847810011206
+ },
+ "CORRECTION": "The steps/scheduler cliff reported below (seed 42 only) turned out to be a single-seed artifact. Re-running the same step counts at seed 123 gives r = -0.69 (10 steps), -0.19 (15 steps), -0.32 (18 steps) -- poor at every step count, unlike seed 42 which was excellent at 10 and 15. Zeroing the scheduler's mandatory SDE noise term (CogVideoXDPMScheduler.step() adds randn noise regardless of eta -- eta is unused in the formula) made results WORSE (18 steps deterministic: only 3/49 frames had a recognizable rider), ruling out determinism as a fix. See README Part 3 for the full corrected writeup. Conclusion: no steps/CFG/scheduler configuration reliably controls motion-tracking quality in this setup; apparent differences are dominated by seed variance.",
+ "seed_variance_followup": {
+  "10step_dpm_cfg1_seed42": {
+   "r": 0.912,
+   "visible_frames": 24
+  },
+  "15step_dpm_cfg1_seed42": {
+   "r": 0.986,
+   "visible_frames": 27
+  },
+  "18step_dpm_cfg1_seed42": {
+   "r": 0.017,
+   "visible_frames": 28
+  },
+  "18step_dpm_cfg1_seed42_deterministic_no_noise": {
+   "r": -0.807,
+   "visible_frames": 3,
+   "note": "worse than stochastic version at the same step count -- noise term is load-bearing"
+  },
+  "10step_dpm_cfg1_seed123": {
+   "r": -0.695,
+   "visible_frames": 49
+  },
+  "15step_dpm_cfg1_seed123": {
+   "r": -0.186,
+   "visible_frames": 48
+  },
+  "18step_dpm_cfg1_seed123": {
+   "r": -0.32,
+   "visible_frames": 48
+  }
  }
 }

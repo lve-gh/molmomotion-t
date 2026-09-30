@@ -247,42 +247,55 @@ displacements — on this clip the two motion fields are nearly identical (Pears
 this NF4 + block-offloaded setup worse, not better**, and not smoothly — the DPM scheduler (`demo.py`'s default,
 `CogVideoXDPMScheduler` with `timestep_spacing="trailing"`) has a sharp cliff rather than a gradual decline.
 
-**Scheduler/step-count diagnosis** (`scripts_local/part3_run_das_lowvram.py --scheduler dpm|ddim`, `results/part3_scheduler_diagnosis.json`):
-we first ruled out `use_dynamic_cfg` as a cause — with `guidance_scale=1.0`, `do_classifier_free_guidance` is computed once as
-`guidance_scale > 1.0` before the loop and stays `False`, so the per-step dynamic-CFG update is dead code and no second forward
-pass ever runs at CFG 1.0 (checked directly in `models/cogvideox_tracking.py`). Sweeping the DPM scheduler by step count instead:
+**Scheduler/step-count diagnosis, revised** (`scripts_local/part3_run_das_lowvram.py --scheduler dpm|ddim`,
+`results/part3_scheduler_diagnosis.json`): we first ruled out `use_dynamic_cfg` as a cause — with `guidance_scale=1.0`,
+`do_classifier_free_guidance` is computed once as `guidance_scale > 1.0` before the loop and stays `False`, so the per-step
+dynamic-CFG update is dead code and no second forward pass ever runs at CFG 1.0 (checked directly in
+`models/cogvideox_tracking.py`). Sweeping the DPM scheduler by step count at the original seed (42) looked like a real,
+sharp cliff:
 
-| steps (DPM, CFG 1.0) | 10 | 15 | 18 | 20 | 50 (CFG 6.0) |
+| steps (DPM, CFG 1.0, seed 42) | 10 | 15 | 18 | 20 | 50 (CFG 6.0) |
 |---|---|---|---|---|---|
-| correlation with commanded motion (r) | 0.91 | **0.99** | 0.02 | 0.25 | -0.32 |
-| RMS error vs. commanded (px) | 71 | **27** | 168 | 165 | 268 |
+| correlation with commanded motion (r) | 0.91 | 0.99 | 0.02 | 0.25 | -0.32 |
 
-15 steps is not a plateau before a slow decline — it is the *best* result we got, better than the 10-step default used for the
-"expected results" above — and then the very next point we tried, 18 steps, collapses completely (the rider freezes and the
-background dissolves). DDIM (the only other scheduler this DaS fork's transformer supports) is mediocre at every step count we
-tried (r = 0.30 at 10 steps, 0.29 at 20), so switching scheduler doesn't fix it either. This rules out smooth, monotonic causes
-(NF4 error simply compounding over more steps would predict gradual decline, not a cliff between 15 and 18) and points at
-something specific to how `CogVideoXDPMScheduler`'s order-2 multistep correction behaves at particular step counts in this
-NF4 + block-offload + tracking-conditioned setup; we did not track it down further. **Practical upshot: 15 steps / DPM / CFG
-1.0 is a better default than the 10-step one used above** (higher correlation, lower error, visibly sharper output) — the
-"expected results" above were generated before this diagnosis and still use 10 steps; rerunning with `--num_inference_steps 15`
-is recommended.
+**That conclusion was wrong, and the correction is the more important finding.** `CogVideoXDPMScheduler.step()` always adds
+a `randn` noise term scaled by `mult_noise`, regardless of `eta` — `eta` is accepted as a parameter but never used in the
+formula (checked directly in the installed `scheduling_dpm_cogvideox.py`), so this is an SDE sampler, not a deterministic
+ODE one, even nominally at `eta=0`. Two follow-up tests: (1) patching the scheduler to zero that noise term
+(`--deterministic-dpm`) made 18 steps *worse*, not better (the video collapsed to near-blank frames, visible-rider count
+dropped to 3/49) — so the noise term is load-bearing, not an optional artifact, ruling out "just make it deterministic" as
+a fix; (2) **re-running the same step counts with a different seed (123) instead of 42 breaks the entire "15 is best, 18+
+is a cliff" story** — at seed 123, correlation is poor at every step count tried, including the ones that were excellent at
+seed 42:
+
+| steps (DPM, CFG 1.0) | seed 42 | seed 123 |
+|---|---|---|
+| 10 | r = 0.91 | r = -0.69 |
+| 15 | r = 0.99 | r = -0.19 |
+| 18 | r = 0.02 | r = -0.32 |
+
+Seed 42 happened to track the commanded motion well at 10 *and* 15 steps and badly at 18+; seed 123 tracks it badly at
+every step count tested. **The real finding is that this scheduler's mandatory noise injection gives this pipeline very
+high run-to-run variance in how well the generated motion follows the commanded trajectory, and neither step count, CFG,
+nor scheduler choice (DDIM was mediocre at every step count tried too, r ≈ 0.30) reliably controls it** — what looked like
+a clean "15 steps is a local optimum, 18+ is a cliff" pattern was a single-seed artifact. Telling a genuinely reliable
+configuration apart from noise would need many seeds per configuration with error bars, well beyond this machine's time
+budget; the honest conclusion is that single-seed step/CFG/scheduler comparisons on this setup (including the ones
+earlier in this README) are not statistically meaningful on their own.
 
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
-![Scheduler/step-count cliff: 10 vs 15 vs 18 vs 20 (DPM) vs 10 (DDIM)](docs/expected/part3_scheduler_cliff.jpg)
+![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)
 
 ## Known limitations
 
-* One clip per part, one seed.
+* One clip per part; part 3's steps/CFG/scheduler numbers are single-seed and, per the corrected finding above, not
+  statistically meaningful on their own (run-to-run variance from the scheduler's built-in noise injection is large enough
+  to flip which configuration looks "best").
 * The part 3 control is DaS with a static tracking video, not plain CogVideoX-I2V.
-* The "expected results" above use 10 steps/CFG 1.0/DPM; a later diagnosis found 15 steps is strictly better and recommended
-  instead (see the scheduler/step-count table above) — not yet re-run as the headline result.
-* The scheduler cliff between 15 and 18 DPM steps is reported as observed, not explained; DDIM avoids the cliff but is
-  mediocre at every step count tried, so it is not a fix either.
-* Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above); with a single
-  real history frame the model predicts motion but not reliably in the right direction, and we could not find a way to give
-  it genuine pre-t0 history — ShareRobot's `trajectory`/`affordance` splits ship exactly 2 frames per episode, and the one
-  split with real multi-frame sequences (`planning`, `frame_0..frame_N`) ships them only inside a ~510 GB split tar.gz
-  archive, far beyond what this machine's disk (19 GB free) can hold. Using ShareRobot's own future waypoints as a stand-in
-  for history would leak future information into the input, so we did not do that either.
+* No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds; the
+  "expected results" above (10 steps/CFG 1.0/DPM) is simply the configuration that was run first, not a demonstrated best.
+* Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above). With genuinely
+  real, non-duplicated, physically-consistent history (see below), the model does predict real motion but gets the
+  direction wrong across all 3 independent attempts tried — this looks like a real domain-transfer limitation rather than
+  an input artifact.
