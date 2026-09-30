@@ -70,6 +70,14 @@ def main():
     ap.add_argument("--width", type=int, default=720)
     ap.add_argument("--block_offload", action="store_true",
                     help="keep NF4 transformer blocks in CPU RAM and stream one block at a time to the GPU (frees VRAM for activations)")
+    ap.add_argument("--bf16_transformer", action="store_true",
+                    help="diagnostic: load the transformer in plain bf16 instead of NF4 (needs --block_offload). NOTE: the "
+                         "full bf16 transformer is ~17.4GB, more than this machine's 16GB RAM even with block_offload "
+                         "(only the block_offload HOOK destination is freed, not the resident total) -- kept here for a "
+                         "machine with more RAM; do not use on this 16GB machine, it will exhaust host memory.")
+    ap.add_argument("--scheduler", choices=["dpm", "ddim"], default="dpm",
+                    help="diagnostic: DaS's demo.py default is DPM (timestep_spacing=trailing); DDIM is the other "
+                         "CogVideoX-supported scheduler, to check whether the steps/CFG degradation is scheduler-specific")
     ap.add_argument("--stage", choices=["encode", "generate"], required=True,
                     help="encode: T5 prompt encoding -> saved embeds; generate: NF4 transformer + VAE from saved embeds (separate processes keep peak memory low)")
     args = ap.parse_args()
@@ -200,24 +208,43 @@ def main():
                 torch.set_default_dtype(prev)
         finally:
             nn.Module.to_empty = _orig_to_empty
-        qcfg = DiffBnb(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
-        skip = ["proj_out", "patch_embed", "time_embedding", "combine_linears", "initial_combine_linear", "norm_out"]
-        transformer = replace_with_bnb_linear(transformer, modules_to_not_convert=skip, quantization_config=qcfg)
         idx = json.loads((bf16_root / "transformer" / "diffusion_pytorch_model.bin.index.json").read_text())["weight_map"]
         n_q = n_o = 0
-        for fn in sorted(set(idx.values())):
-            piece = torch.load(bf16_root / "transformer" / fn, map_location="cpu", weights_only=True)
-            for k, w in piece.items():
-                parent, _, leaf = k.rpartition(".")
-                mod = transformer.get_submodule(parent) if parent else transformer
-                if isinstance(mod, bnb.nn.Linear4bit) and leaf == "weight":
-                    mod.weight = bnb.nn.Params4bit(w.to(dtype).contiguous(), requires_grad=False,
-                                                   quant_type="nf4", compress_statistics=False).to("cuda")
-                    n_q += 1
-                else:
-                    set_module_tensor_to_device(transformer, k, "cuda", value=w.to(dtype)); n_o += 1
-            del piece; gc.collect()
-            print(f"[load transformer] {fn}: quantized={n_q} other={n_o} | VRAM {torch.cuda.memory_allocated()/1e9:.2f} GB", flush=True)
+        if args.bf16_transformer:
+            # Diagnostic path: no quantization at all. Every weight goes to CPU (host RAM, ~17.4GB) and
+            # --block_offload streams one block at a time to the GPU in plain bf16. Requires --block_offload
+            # (without it, base non-block weights alone would need the weights resident on GPU in bf16, which
+            # plus activations does not fit in 8GB) and ~18GB free host RAM (checked implicitly: OOMs loudly if not).
+            assert args.block_offload, "--bf16_transformer needs --block_offload (bf16 weights don't fit resident on an 8GB GPU)"
+            for fn in sorted(set(idx.values())):
+                piece = torch.load(bf16_root / "transformer" / fn, map_location="cpu", weights_only=True)
+                for k, w in piece.items():
+                    # block weights go straight to host RAM (block_offload's hooks stream them to GPU per forward
+                    # below); the small always-resident modules (patch_embed, time_embedding, proj_out, ...) go
+                    # straight to GPU, same as the NF4 path -- putting them on GPU only to immediately relocate
+                    # everything would need the full 17.4GB resident at once, which doesn't fit in 8GB.
+                    is_block = k.startswith("transformer_blocks.") or k.startswith("transformer_blocks_copy.")
+                    set_module_tensor_to_device(transformer, k, "cpu" if is_block else "cuda", value=w.to(dtype))
+                    n_o += 1
+                del piece; gc.collect()
+                print(f"[load transformer] {fn}: bf16 other={n_o} | VRAM {torch.cuda.memory_allocated()/1e9:.2f} GB", flush=True)
+        else:
+            qcfg = DiffBnb(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+            skip = ["proj_out", "patch_embed", "time_embedding", "combine_linears", "initial_combine_linear", "norm_out"]
+            transformer = replace_with_bnb_linear(transformer, modules_to_not_convert=skip, quantization_config=qcfg)
+            for fn in sorted(set(idx.values())):
+                piece = torch.load(bf16_root / "transformer" / fn, map_location="cpu", weights_only=True)
+                for k, w in piece.items():
+                    parent, _, leaf = k.rpartition(".")
+                    mod = transformer.get_submodule(parent) if parent else transformer
+                    if isinstance(mod, bnb.nn.Linear4bit) and leaf == "weight":
+                        mod.weight = bnb.nn.Params4bit(w.to(dtype).contiguous(), requires_grad=False,
+                                                       quant_type="nf4", compress_statistics=False).to("cuda")
+                        n_q += 1
+                    else:
+                        set_module_tensor_to_device(transformer, k, "cuda", value=w.to(dtype)); n_o += 1
+                del piece; gc.collect()
+                print(f"[load transformer] {fn}: quantized={n_q} other={n_o} | VRAM {torch.cuda.memory_allocated()/1e9:.2f} GB", flush=True)
         for name, buf in transformer.named_buffers():
             if buf.device.type != "cuda":
                 set_module_tensor_to_device(transformer, name, "cuda", value=buf.to("cpu") if buf.device.type != "meta" else buf)
@@ -245,7 +272,10 @@ def main():
         pipe = CogVideoXImageToVideoPipelineTracking(
             vae=vae, text_encoder=None, tokenizer=tokenizer,
             transformer=transformer, scheduler=scheduler)
-        pipe.scheduler = CogVideoXDPMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
+        if args.scheduler == "dpm":
+            pipe.scheduler = CogVideoXDPMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
+        else:
+            pipe.scheduler = CogVideoXDDIMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
         # DaS wraps the transformer in torch.compile (models/cogvideox_tracking.py:579); Triton/inductor
         # are unavailable on Windows -> unwrap to eager mode.
         if hasattr(pipe.transformer, "_orig_mod"):

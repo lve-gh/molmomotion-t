@@ -1,0 +1,72 @@
+{
+ "10step_dpm": {
+  "steps": 10,
+  "scheduler": "dpm",
+  "visible_frames": 24,
+  "slope_px_per_frame": 7.943990855649904,
+  "pearson_r_vs_commanded": 0.9116069433816196,
+  "rms_err_px": 70.67446106445138,
+  "laplacian_first5": 87.03682337492934,
+  "laplacian_last5": 106.52498554852271
+ },
+ "15step_dpm": {
+  "steps": 15,
+  "scheduler": "dpm",
+  "visible_frames": 27,
+  "slope_px_per_frame": 10.494060595275174,
+  "pearson_r_vs_commanded": 0.9856020067151564,
+  "rms_err_px": 27.15725541011413,
+  "laplacian_first5": 111.36360156444744,
+  "laplacian_last5": 156.64639138097192
+ },
+ "18step_dpm": {
+  "steps": 18,
+  "scheduler": "dpm",
+  "visible_frames": 28,
+  "slope_px_per_frame": -0.10229885057471234,
+  "pearson_r_vs_commanded": 0.017027951067033975,
+  "rms_err_px": 167.78228717820886,
+  "laplacian_first5": 109.21267404040512,
+  "laplacian_last5": 147.35955031616044
+ },
+ "20step_dpm": {
+  "steps": 20,
+  "scheduler": "dpm",
+  "visible_frames": 40,
+  "slope_px_per_frame": 2.0939344262295085,
+  "pearson_r_vs_commanded": 0.24976909578842196,
+  "rms_err_px": 165.3251106861047,
+  "laplacian_first5": 93.70389545500078,
+  "laplacian_last5": 100.20361776855468
+ },
+ "50step_dpm_cfg6": {
+  "steps": 50,
+  "scheduler": "dpm (cfg6)",
+  "visible_frames": 49,
+  "slope_px_per_frame": -1.7275510204081612,
+  "pearson_r_vs_commanded": -0.3220445284338786,
+  "rms_err_px": 268.43950820890376,
+  "laplacian_first5": 80.0540135488067,
+  "laplacian_last5": 311.89568468842265
+ },
+ "10step_ddim": {
+  "steps": 10,
+  "scheduler": "ddim",
+  "visible_frames": 46,
+  "slope_px_per_frame": 2.365394757402923,
+  "pearson_r_vs_commanded": 0.2993579488201777,
+  "rms_err_px": 186.97032946301266,
+  "laplacian_first5": 73.92040670806341,
+  "laplacian_last5": 83.27424426560893
+ },
+ "20step_ddim": {
+  "steps": 20,
+  "scheduler": "ddim",
+  "visible_frames": 39,
+  "slope_px_per_frame": 2.7153852874366606,
+  "pearson_r_vs_commanded": 0.2905448140502458,
+  "rms_err_px": 163.6024379247384,
+  "laplacian_first5": 77.1008098937235,
+  "laplacian_last5": 89.08847810011206
+ }
+}
