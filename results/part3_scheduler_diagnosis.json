@@ -100,5 +100,22 @@
    "r": -0.32,
    "visible_frames": 48
   }
+ },
+ "seed_sweep_at_10steps": {
+  "seed42": {
+   "r": 0.912,
+   "repeat_r": 0.991,
+   "note": "reproducible across a repeat run (pixel-level non-identical, mean abs diff ~3.9/255, but same quality tier)"
+  },
+  "seed123": {
+   "r": -0.695
+  },
+  "seed7": {
+   "r": -0.353
+  },
+  "seed999": {
+   "r": 0.118
+  },
+  "summary": "Of 4 distinct seeds tried at 10 steps/CFG1/DPM, only 1 (seed 42) gave a clearly good result (r>0.9); the other 3 ranged from mediocre to negative (r -0.69 to 0.12). Good tracking is not the default outcome of this configuration -- it is what happened to come out of one particular seed we used throughout the rest of the report, and reproducibility testing shows that seed genuinely and reliably does well (not just hardware noise on top of noise), it is just not representative of the configuration in general."
  }
 }

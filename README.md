@@ -283,6 +283,15 @@ configuration apart from noise would need many seeds per configuration with erro
 budget; the honest conclusion is that single-seed step/CFG/scheduler comparisons on this setup (including the ones
 earlier in this README) are not statistically meaningful on their own.
 
+**Reproducibility and a rough hit rate** (`results/part3_scheduler_diagnosis.json`): re-running 10 steps/seed 42 exactly
+reproduces the same quality tier (r = 0.99 on the repeat vs. 0.91 originally; frames are not bit-identical, mean pixel
+difference ≈ 4/255, presumably non-deterministic CUDA/NF4-dequantization kernels, but nowhere near enough to explain the
+swing from 0.91 to -0.69 at other seeds) — so "seed 42 is good" is a real, stable property of that seed, not a fluke of
+hardware noise on a single run. Trying 2 more seeds at 10 steps (7, 999) put the tally at 1 good result out of 4 seeds
+tried (42: r = 0.91; 123: r = -0.69; 7: r = -0.35; 999: r = 0.12) — clearly good tracking looks like a minority outcome
+of this configuration, not the default, so "run a few seeds and keep the one that tracks well" is a legitimate practical
+strategy, but there is no configuration knob (steps, CFG, scheduler) that reliably gets you there in one try.
+
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
 ![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)
