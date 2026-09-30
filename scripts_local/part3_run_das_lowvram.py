@@ -78,6 +78,13 @@ def main():
     ap.add_argument("--scheduler", choices=["dpm", "ddim"], default="dpm",
                     help="diagnostic: DaS's demo.py default is DPM (timestep_spacing=trailing); DDIM is the other "
                          "CogVideoX-supported scheduler, to check whether the steps/CFG degradation is scheduler-specific")
+    ap.add_argument("--deterministic-dpm", action="store_true",
+                    help="diagnostic/potential fix: CogVideoXDPMScheduler.step() always adds a randn noise term "
+                         "scaled by mult_noise regardless of `eta` (eta is accepted but never used in that formula "
+                         "-- checked in scheduling_dpm_cogvideox.py) -- i.e. it is an SDE sampler, not a deterministic "
+                         "ODE one, even at eta=0. This zeroes that noise term (deterministic ODE-like stepping) to "
+                         "test whether the steps/CFG quality cliff is really random-walk sampling variance that "
+                         "compounds over more steps, rather than a genuine per-step bug.")
     ap.add_argument("--stage", choices=["encode", "generate"], required=True,
                     help="encode: T5 prompt encoding -> saved embeds; generate: NF4 transformer + VAE from saved embeds (separate processes keep peak memory low)")
     args = ap.parse_args()
@@ -273,7 +280,44 @@ def main():
             vae=vae, text_encoder=None, tokenizer=tokenizer,
             transformer=transformer, scheduler=scheduler)
         if args.scheduler == "dpm":
-            pipe.scheduler = CogVideoXDPMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
+            dpm_cls = CogVideoXDPMScheduler
+            if args.deterministic_dpm:
+                class DeterministicDPMScheduler(CogVideoXDPMScheduler):
+                    """CogVideoXDPMScheduler.step() with the stochastic noise term (mult_noise * noise) zeroed --
+                    see the --deterministic-dpm help text. Everything else is byte-identical to the parent's step()."""
+                    def step(self, model_output, old_pred_original_sample, timestep, timestep_back, sample,
+                             eta=0.0, use_clipped_model_output=False, generator=None, variance_noise=None,
+                             return_dict=False):
+                        if self.num_inference_steps is None:
+                            raise ValueError("Number of inference steps is 'None', run 'set_timesteps' first")
+                        prev_timestep = timestep - self.config.num_train_timesteps // self.num_inference_steps
+                        alpha_prod_t = self.alphas_cumprod[timestep]
+                        alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
+                        alpha_prod_t_back = self.alphas_cumprod[timestep_back] if timestep_back is not None else None
+                        beta_prod_t = 1 - alpha_prod_t
+                        if self.config.prediction_type == "epsilon":
+                            pred_original_sample = (sample - beta_prod_t ** 0.5 * model_output) / alpha_prod_t ** 0.5
+                        elif self.config.prediction_type == "sample":
+                            pred_original_sample = model_output
+                        elif self.config.prediction_type == "v_prediction":
+                            pred_original_sample = (alpha_prod_t ** 0.5) * sample - (beta_prod_t ** 0.5) * model_output
+                        else:
+                            raise ValueError(f"prediction_type {self.config.prediction_type} not supported")
+                        h, r, lamb, lamb_next = self.get_variables(alpha_prod_t, alpha_prod_t_prev, alpha_prod_t_back)
+                        mult = list(self.get_mult(h, r, alpha_prod_t, alpha_prod_t_prev, alpha_prod_t_back))
+                        # mult_noise term deliberately dropped: no randn_tensor call, no stochastic component.
+                        prev_sample = mult[0] * sample - mult[1] * pred_original_sample
+                        if old_pred_original_sample is None or prev_timestep < 0:
+                            return prev_sample, pred_original_sample
+                        denoised_d = mult[2] * pred_original_sample - mult[3] * old_pred_original_sample
+                        prev_sample = mult[0] * sample - mult[1] * denoised_d
+                        if not return_dict:
+                            return (prev_sample, pred_original_sample)
+                        from diffusers.schedulers.scheduling_ddim import DDIMSchedulerOutput
+                        return DDIMSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
+                dpm_cls = DeterministicDPMScheduler
+                print("[note] --deterministic-dpm: using a DPM scheduler variant with the stochastic noise term zeroed", flush=True)
+            pipe.scheduler = dpm_cls.from_config(pipe.scheduler.config, timestep_spacing="trailing")
         else:
             pipe.scheduler = CogVideoXDDIMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
         # DaS wraps the transformer in torch.compile (models/cogvideox_tracking.py:579); Triton/inductor

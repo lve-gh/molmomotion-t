@@ -138,6 +138,32 @@ is already moving in, so it is essentially guessing.
 
 ![ShareRobot H1-F32 prediction vs annotation](docs/expected/part2_h1_predicted_vs_annotated.jpg)
 
+**With real, non-replicated, 3-frame history** (`scripts_local/part2b_build_real_history.py`,
+`results/part2_direction_investigation.json`): H1-F32's 1-frame history genuinely cannot carry a direction signal, so this
+tests the H3 checkpoint (3 history frames, its native setting) on a ShareRobot episode that actually has enough real frames
+for it — `BAAI/ShareRobot`'s `trajectory`/`affordance` splits ship only 2 frames/episode (already exhausted above), but its
+`planning` split has real `frame_0..frame_N` sequences; they are packed in a ~510 GB split tar.gz archive, which does not
+need to be downloaded whole — streaming it (`curl ... | gzip -dc | tar -x <specific member paths>`, stopped once found) and
+picking an episode that happens to sit in the first few MB extracts the handful of frames needed with no meaningful disk or
+bandwidth cost. Used episode `49_bridge#episode_4263` (action: "move the pan towards the right side of the yellow knife"),
+frames 15/20/25 as history (t-2/t-1/t0) and frame 29 as a short real continuation to check direction against; the query
+point is the arm/gripper's 2D position, tracked automatically per frame (centroid of near-black pixels in a fixed ROI) —
+coarse (lands near the wrist joint, not a specific fingertip pixel) but consistent, and genuinely moving (229 → 295 → 301 px
+across the 3 history frames, matching the episode's real rightward motion). First attempt used an independent monocular
+depth estimate per history frame, which was not temporally consistent (1.11 m → 0.65 m → 0.30 m, an unphysical ~0.8 m jump
+in a fraction of a second) and swamped the real lateral motion with noise — the model predicted zero motion again, this
+time plausibly because the 3D input didn't look physically real rather than because the history was duplicated. Reusing a
+single t0 depth map for all 3 history frames (holding depth temporally consistent while keeping each frame's real tracked
+2D position) fixed that: the model now predicts **genuine, non-zero motion** (3D path length 0.39 m), but in a direction
+close to **opposite** both the real near-future continuation (cosine -0.60) and the history's own direction it was just
+given (cosine -0.97, i.e. it moved backwards relative to its own input velocity). Across all 3 independently-constructed
+non-duplicated-history attempts (H1-F32's single real frame, H3 with noisy depth, H3 with consistent depth), direction
+comes out wrong every time it is not exactly zero — which rules out duplicated history and noisy depth as the (sole)
+explanations and points at a genuine limitation of applying MolmoMotion (trained on outdoor/tracked-object footage such as
+DAVIS) to tabletop robot manipulation with invented camera intrinsics and an unfamiliar action-conditioning style.
+
+![Real history (green/cyan) moves right; the predicted path (magenta) goes almost the opposite way](docs/expected/part2b_real_history_vs_predicted.jpg)
+
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
 ![ShareRobot input](docs/expected/part2_input_points.jpg)

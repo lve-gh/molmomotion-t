@@ -1,0 +1,26 @@
+{
+ "summary": "Three independent attempts to fix the Part-2 ShareRobot direction problem, all falsified the duplicated-history hypothesis as the sole cause.",
+ "attempt_1_H1F32_single_real_frame": {
+  "history_frames": 1,
+  "real_or_duplicated": "real (only 1 frame exists)",
+  "result": "nonzero motion predicted (path 0.44m)",
+  "direction_cosine_vs_real": -0.62
+ },
+ "attempt_2_H3_real_frames_noisy_depth": {
+  "history_frames": 3,
+  "real_or_duplicated": "real (planning split, frames 15/20/25)",
+  "depth": "independent per-frame monocular estimate (inconsistent: 1.11/0.65/0.30m)",
+  "result": "zero motion predicted (model likely distrusted an implausible 3D history)",
+  "direction_cosine": null
+ },
+ "attempt_3_H3_real_frames_consistent_depth": {
+  "history_frames": 3,
+  "real_or_duplicated": "real (planning split, frames 15/20/25)",
+  "depth": "single t0 depth map reused for all 3 frames (physically consistent)",
+  "result": "nonzero motion predicted (3D path length 0.39m)",
+  "direction_cosine_vs_real_future": -0.6,
+  "direction_cosine_vs_own_history": -0.97,
+  "note": "predicted direction is close to OPPOSITE the real history direction it was just given"
+ },
+ "conclusion": "Across 3 independently-constructed real (non-duplicated) history inputs, direction prediction is never reliably correct (cosine ranges -0.60 to -0.62, one case exactly opposite its own input history at -0.97). This is not explained by duplicated history (falsified: attempts 2-3 used real history) or by depth noise alone (falsified: attempt 3 fixed depth consistency and still got the wrong direction). Most likely a genuine domain-transfer limitation: invented camera intrinsics, an action-conditioning phrasing unlike the training distribution, and/or a training distribution dominated by outdoor/tracked-object motion (DAVIS-style) rather than tabletop robot manipulation."
+}
