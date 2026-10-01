@@ -318,6 +318,14 @@ separate tracking-conditioning-strength parameter to try either — unlike a Con
 tracking signal is injected through dedicated transformer blocks baked into the model, not a scalar weight we could turn
 down; checked directly in `models/cogvideox_tracking.py`.)
 
+**The instability is specific to following motion, not a generic property of this setup.** Running the *static* (no-motion)
+control at the same 3 seeds that gave wildly different results for the real trajectory (42, 123, 7; 10 steps, CFG 1.0) gives
+near-identical outcomes: the rider stays recognizable in all 49/49 frames at every seed, with NCC (0.74–0.80) and consecutive-frame
+SSIM (0.78–0.81) all in a narrow, similar band — none of the collapse-into-noise or frozen-rider failure modes seen when a real
+trajectory is commanded. So the chaotic seed-sensitivity is not a generic instability of this NF4 + block-offload + stochastic
+scheduler combination — the pipeline is quite consistent when there is nothing to track. It is specifically the interaction
+between the scheduler's mandatory noise and a *moving* commanded trajectory that is unreliable here.
+
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
 ![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)

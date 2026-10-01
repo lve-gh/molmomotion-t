@@ -155,5 +155,23 @@
   "frac_r_gt_0.3": 0.21428571428571427,
   "frac_r_lt_0": 0.6428571428571429,
   "conclusion": "With a properly-sized sample (14 seeds, same config: 10 steps, CFG 1.0, DPM), the median correlation with the commanded trajectory is NEGATIVE (-0.35) and the mean is -0.12 -- the typical run does NOT track the command, and only 2/14 (14%) give a clearly good result (r>0.7). The r=0.91 reported throughout this README/report for the main part-3 result was a real but unrepresentative outlier (top ~14th percentile), not the expected outcome of this configuration. This supersedes the earlier 1-good-out-of-4 estimate with a statistically meaningful one."
+ },
+ "static_control_seed_sweep": {
+  "seed42": {
+   "visible_frames": "49/49",
+   "ncc_mean": 0.738,
+   "consec_ssim": 0.813
+  },
+  "seed123": {
+   "visible_frames": "49/49",
+   "ncc_mean": 0.762,
+   "consec_ssim": 0.784
+  },
+  "seed7": {
+   "visible_frames": "49/49",
+   "ncc_mean": 0.804,
+   "consec_ssim": 0.784
+  },
+  "conclusion": "The no-motion (static tracking video) control is STABLE across the same 3 seeds that gave wildly different motion-tracking correlations with a real commanded trajectory (visible frames 49/49 in all 3, NCC and SSIM all in a narrow, similar band). This isolates the chaotic variance to the task of following a non-trivial commanded trajectory specifically -- it is not a generic property of this NF4 + block-offload + stochastic-scheduler setup. Likely interpretation: the interaction between the scheduler's mandatory SDE noise and a MOVING tracking conditioning signal is what is unstable, not the inference setup in general."
  }
 }
