@@ -130,5 +130,30 @@
    "r": -0.416
   },
   "summary": "CFG does not monotonically help: on the same bad seed (123), CFG=3 partially rescued tracking (r went from -0.69 to +0.38) but CFG=6 went back to bad (-0.42). Combined with the step-count and seed sweeps above, no single knob (steps, CFG, or scheduler type) has a monotonic, reliable effect on how well the generated video tracks the commanded trajectory in this NF4 + block-offload setup -- quality is highly sensitive to the exact combination of seed/steps/CFG in a way that looks close to chaotic, not a simple quality/speed tradeoff."
+ },
+ "FINAL_seed_distribution_at_10steps_cfg1_dpm_n14": {
+  "per_seed_r": {
+   "42": 0.912,
+   "123": -0.695,
+   "7": -0.353,
+   "999": 0.118,
+   "1": -0.558,
+   "2": -0.425,
+   "3": -0.402,
+   "4": 0.356,
+   "5": -0.353,
+   "6": -0.454,
+   "8": -0.587,
+   "9": -0.129,
+   "10": 0.085,
+   "11": 0.832
+  },
+  "n": 14,
+  "mean_r": -0.11807142857142858,
+  "median_r": -0.353,
+  "frac_r_gt_0.7": 0.14285714285714285,
+  "frac_r_gt_0.3": 0.21428571428571427,
+  "frac_r_lt_0": 0.6428571428571429,
+  "conclusion": "With a properly-sized sample (14 seeds, same config: 10 steps, CFG 1.0, DPM), the median correlation with the commanded trajectory is NEGATIVE (-0.35) and the mean is -0.12 -- the typical run does NOT track the command, and only 2/14 (14%) give a clearly good result (r>0.7). The r=0.91 reported throughout this README/report for the main part-3 result was a real but unrepresentative outlier (top ~14th percentile), not the expected outcome of this configuration. This supersedes the earlier 1-good-out-of-4 estimate with a statistically meaningful one."
  }
 }

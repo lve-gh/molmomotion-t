@@ -292,14 +292,18 @@ configuration apart from noise would need many seeds per configuration with erro
 budget; the honest conclusion is that single-seed step/CFG/scheduler comparisons on this setup (including the ones
 earlier in this README) are not statistically meaningful on their own.
 
-**Reproducibility and a rough hit rate** (`results/part3_scheduler_diagnosis.json`): re-running 10 steps/seed 42 exactly
-reproduces the same quality tier (r = 0.99 on the repeat vs. 0.91 originally; frames are not bit-identical, mean pixel
-difference ≈ 4/255, presumably non-deterministic CUDA/NF4-dequantization kernels, but nowhere near enough to explain the
-swing from 0.91 to -0.69 at other seeds) — so "seed 42 is good" is a real, stable property of that seed, not a fluke of
-hardware noise on a single run. Trying 2 more seeds at 10 steps (7, 999) put the tally at 1 good result out of 4 seeds
-tried (42: r = 0.91; 123: r = -0.69; 7: r = -0.35; 999: r = 0.12) — clearly good tracking looks like a minority outcome
-of this configuration, not the default, so "run a few seeds and keep the one that tracks well" is a legitimate practical
-strategy, but there is no configuration knob (steps, CFG, scheduler) that reliably gets you there in one try.
+**Reproducibility, and the real hit rate with a proper sample** (`results/part3_scheduler_diagnosis.json`): re-running 10
+steps/seed 42 exactly reproduces the same quality tier (r = 0.99 on the repeat vs. 0.91 originally; frames are not
+bit-identical, mean pixel difference ≈ 4/255, presumably non-deterministic CUDA/NF4-dequantization kernels, but nowhere
+near enough to explain the swing to negative correlation at other seeds) — so "seed 42 is good" is a real, stable property
+of that seed, not a fluke of hardware noise on a single run. A first small sample (4 seeds) suggested a 1-in-4 hit rate;
+running **14 seeds in total at the same configuration (10 steps, CFG 1.0, DPM)** gives a properly-sized answer, and it is
+worse than that: **median correlation with the commanded motion is -0.35, mean is -0.12, and only 2 of 14 seeds (14 %)
+give a clearly good result (r > 0.7)**. The r = 0.91 used for the "expected results" above is a real but unrepresentative
+outlier (roughly top-15th-percentile), not what this configuration typically produces — a typical run does *not* track the
+commanded trajectory. "Run a few seeds and keep the one that tracks well" is a legitimate practical strategy (and cheap:
+~5 min/seed at 10 steps), but there is no configuration knob (steps, CFG, scheduler) that reliably gets a good result in
+one try, and the honest expectation for this pipeline is closer to "occasionally works" than "usually works."
 
 **Does CFG rescue a bad seed? Not reliably.** Seed 123 was clearly bad at CFG 1.0 (r = -0.69, 10 steps). Raising CFG to 3.0
 (still 10 steps, same seed) improved it substantially, to r = 0.38 — a real effect, not noise. But raising CFG further to
@@ -316,12 +320,14 @@ seed/steps/CFG combination in a way that looks close to chaotic rather than a cl
 
 ## Known limitations
 
-* One clip per part; part 3's steps/CFG/scheduler numbers are single-seed and, per the corrected finding above, not
-  statistically meaningful on their own (run-to-run variance from the scheduler's built-in noise injection is large enough
-  to flip which configuration looks "best").
+* One clip per part. Part 3's "expected results" (r = 0.91) use one specific seed that a 14-seed sweep at the same
+  configuration shows is an unrepresentative outlier — the median outcome at 10 steps/CFG 1.0/DPM is r = -0.35 (does not
+  track the command), and the reported r = 0.91 run should be read as "this configuration can work, occasionally," not
+  as the expected result of running it once.
 * The part 3 control is DaS with a static tracking video, not plain CogVideoX-I2V.
-* No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds; the
-  "expected results" above (10 steps/CFG 1.0/DPM) is simply the configuration that was run first, not a demonstrated best.
+* No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds (tested:
+  5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
+  above is simply one run that happened to work, not a demonstrated best or typical outcome.
 * Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above). With genuinely
   real, non-duplicated, physically-consistent history (see below), the model does predict real motion but gets the
   direction wrong across all 3 independent attempts tried — this looks like a real domain-transfer limitation rather than
