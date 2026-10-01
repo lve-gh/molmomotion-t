@@ -165,8 +165,11 @@ def main():
         ax.plot(pred_2d[p, :, 0], pred_2d[p, :, 1], "-", c="magenta", lw=1.3, alpha=0.85,
                 label=f"predicted (T={a.temperature}, seed={a.seed})" if p == 0 else None)
         ax.plot(pred_2d[p, -1, 0], pred_2d[p, -1, 1], "x", c="magenta", ms=6)
-    ax.set_xlim(0, img.width)
-    ax.set_ylim(img.height, 0)
+    all_x = np.concatenate([pred_2d[:, :, 0].ravel(), hist_2d[:, 0], [future_2d[0]], [0, img.width]])
+    all_y = np.concatenate([pred_2d[:, :, 1].ravel(), hist_2d[:, 1], [future_2d[1]], [0, img.height]])
+    pad = 20
+    ax.set_xlim(all_x.min() - pad, all_x.max() + pad)
+    ax.set_ylim(all_y.max() + pad, all_y.min() - pad)
     ax.legend(loc="lower left", fontsize=8)
     ax.set_title(f"{meta['id']}: sampled decoding (T={a.temperature}, ngram_block={a.ngram_block}, seed={a.seed})")
     fig.tight_layout()
