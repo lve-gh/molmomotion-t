@@ -224,7 +224,8 @@ Other files: `part3_diag_load.py`, `gpu_alloc_test.py`, `ram_selftest.py` are th
 
 480x720, 49 frames, 8 fps, NF4, 10 steps, CFG off, ~330 s and ~5.5 GB peak VRAM per clip. The rider follows the commanded
 trajectory (slope 6.4 vs 9.5 px/frame, r = 0.85) and is gone by frame ~24; image quality degrades after ~12 frames
-(`results/part3_metrics.json`).
+(`results/part3_metrics.json`). **This is a real run, but — see the seed-sweep finding under "Ablations" below — not a
+typical one**: the same configuration run with other seeds usually does not track the command this well.
 
 Rows: real continuation, tracking video built from the prediction, DaS with the MolmoMotion trajectory, DaS with a static
 (no-motion) tracking video; columns: frames 0 / 12 / 24 / 36 / 48. In the static control the rider stays in place while the
@@ -329,6 +330,6 @@ seed/steps/CFG combination in a way that looks close to chaotic rather than a cl
   5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
   above is simply one run that happened to work, not a demonstrated best or typical outcome.
 * Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above). With genuinely
-  real, non-duplicated, physically-consistent history (see below), the model does predict real motion but gets the
-  direction wrong across all 3 independent attempts tried — this looks like a real domain-transfer limitation rather than
-  an input artifact.
+  real, non-duplicated, physically-consistent history (see the `planning`-split experiment above), the model does predict
+  real motion but gets the direction wrong across all 3 independent attempts tried — this looks like a real domain-transfer
+  limitation rather than an input artifact.
