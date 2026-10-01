@@ -244,8 +244,16 @@ the best directional result in the entire investigation (`scripts_local/part2f_s
 ![Sampled decoding (T=0.8): predicted path (magenta) now points the same way as the real continuation (cyan)](docs/expected/part2f_sampled_decoding_episode4801.jpg)
 
 Caveat, consistent with the Part-3 lesson about single-seed results: only one seed per episode has been tried at this
-temperature so far. The effect is real (both episodes moved from a hard zero to genuine, often well-directed motion),
+temperature so far. The effect is real (both H3 episodes moved from a hard zero to genuine, often well-directed motion),
 but a proper multi-seed sweep is needed before claiming a reliably fixed configuration rather than a promising sample.
+
+**And it is not a universal fix.** The same T=0.8 sampling was also tried on the very first example in this report (the
+H1-F32 "reach for the spoon" episode, 1-frame history, originally cosine -0.62 — "essentially guessing"). Sampling made
+it *worse*: cosine -0.84, more confidently wrong than the greedy baseline. With only 1 history frame there is no
+velocity cue in the input at all, regardless of decoding strategy — sampling just adds variance to an already-uninformed
+guess, which helped on the pot episode's richer 3-frame input but hurt here. Net picture: sampled decoding looks
+genuinely promising specifically where the model has real motion information to work with (H3), but is not a fix for
+the underlying information deficit in 1-frame inputs, and even for H3 it is one seed, not a characterized distribution.
 
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
