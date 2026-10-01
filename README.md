@@ -313,7 +313,10 @@ combined with the step-count and seed results above, **no single knob we tried (
 predictable, monotonic effect on tracking quality** in this NF4 + block-offload setup — the interaction between the
 scheduler's mandatory noise, NF4 quantization error, and the backloaded `use_dynamic_cfg` ramp (which the pipeline always
 applies, hardcoded, regardless of the `--guidance_scale` value passed in) leaves quality highly sensitive to the exact
-seed/steps/CFG combination in a way that looks close to chaotic rather than a clean quality/speed tradeoff.
+seed/steps/CFG combination in a way that looks close to chaotic rather than a clean quality/speed tradeoff. (There is no
+separate tracking-conditioning-strength parameter to try either — unlike a ControlNet-style `conditioning_scale`, DaS's
+tracking signal is injected through dedicated transformer blocks baked into the model, not a scalar weight we could turn
+down; checked directly in `models/cogvideox_tracking.py`.)
 
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
