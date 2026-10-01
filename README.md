@@ -173,6 +173,24 @@ DAVIS) to tabletop robot manipulation with invented camera intrinsics and an unf
 
 ![Real history (green/cyan) moves right; the predicted path (magenta) goes almost the opposite way](docs/expected/part2b_real_history_vs_predicted.jpg)
 
+**With REAL ground truth, not just estimated depth.** All 3 attempts above still used invented camera intrinsics and
+estimated/assumed depth. It turns out `BAAI/ShareRobot` is itself a curated subset of several Open-X-Embodiment source
+datasets (confirmed via `trajectory.json`'s `original_dataset` field: ~43% of its `trajectory` split alone is `bridge`,
+the rest from 16 other robot datasets) -- and the original **BridgeData V2** ships the real, measured 6-DOF WidowX
+end-effector pose per frame, which ShareRobot discards when it curates down to just RGB + text for VLM training. The
+exact source episode was found by matching ShareRobot's paraphrased instruction text against BridgeData V2's own task
+list (a near-exact match, "Move the pan to the right of the yellow knife") and confirmed beyond doubt with a
+pixel-identical frame-0 match (`IPEC-COMMUNITY/bridge_orig_lerobot`, episode_index 45932). Camera extrinsics (we still
+don't have a published calibration for this rig) were self-estimated with `cv2.solvePnP` using the 8 pre-grasp frames,
+where our 2D gripper tracker and the robot's measured end-effector position are the same physical point (12.0 px mean
+reprojection error on a 640x480 image, ~2%) -- then that calibration was used to transform the REAL robot state at the
+history/future frames into camera-frame 3D, with no depth estimation involved at all. The real displacement is genuine
+and non-trivial (0.13 m across history, 0.10 m into the future). Result: the model predicts **zero motion** -- not a
+wrong direction this time, no motion at all, despite a clean, real, well-grounded input (`scripts_local/part2c_calibrated_real_gt.py`,
+`results/part2_direction_investigation.json`, attempt 4). This rules out depth-estimation noise/quality as an
+explanation too (there is no estimated depth left to blame) and leaves genuine out-of-domain generalization as the
+only remaining explanation across all 4 independent attempts.
+
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
 ![ShareRobot input](docs/expected/part2_input_points.jpg)
@@ -341,6 +359,9 @@ between the scheduler's mandatory noise and a *moving* commanded trajectory that
   5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
   above is simply one run that happened to work, not a demonstrated best or typical outcome.
 * Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above). With genuinely
-  real, non-duplicated, physically-consistent history (see the `planning`-split experiment above), the model does predict
-  real motion but gets the direction wrong across all 3 independent attempts tried — this looks like a real domain-transfer
-  limitation rather than an input artifact.
+  real, non-duplicated history the model does predict real motion in some inputs but gets the direction wrong, and in the
+  strongest version of the test (real, calibrated 3D ground truth traced back to the original BridgeData V2 episode — see
+  "With REAL ground truth" above) it predicts no motion at all. 4 independent attempts, 4 different real inputs, none
+  correct — this looks like a genuine domain-transfer limitation (outdoor/tracked-object training data vs. tabletop robot
+  manipulation) rather than an input-construction artifact, and not something fixable without retraining or fine-tuning on
+  robot-manipulation data.
