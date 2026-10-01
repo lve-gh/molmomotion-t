@@ -165,11 +165,39 @@ time plausibly because the 3D input didn't look physically real rather than beca
 single t0 depth map for all 3 history frames (holding depth temporally consistent while keeping each frame's real tracked
 2D position) fixed that: the model now predicts **genuine, non-zero motion** (3D path length 0.39 m), but in a direction
 close to **opposite** both the real near-future continuation (cosine -0.60) and the history's own direction it was just
-given (cosine -0.97, i.e. it moved backwards relative to its own input velocity). Across all 3 independently-constructed
-non-duplicated-history attempts (H1-F32's single real frame, H3 with noisy depth, H3 with consistent depth), direction
-comes out wrong every time it is not exactly zero — which rules out duplicated history and noisy depth as the (sole)
-explanations and points at a genuine limitation of applying MolmoMotion (trained on outdoor/tracked-object footage such as
-DAVIS) to tabletop robot manipulation with invented camera intrinsics and an unfamiliar action-conditioning style.
+given (cosine -0.97, i.e. it moved backwards relative to its own input velocity).
+
+**A second, separate bug was found later in this same input (and fixed).** The 7 non-anchor query points were built by
+shifting all 8 points by the anchor's own 2D pixel motion, then re-sampling the (single, otherwise-consistent) depth map
+at each point's *new, shifted* location independently. Since the depth map varies spatially, this silently gave the 8
+points wildly incoherent implied 3D motion — point displacements ranged from 0.05 m to 0.77 m for points meant to
+rigidly track one ~3 cm gripper (std 0.33 m in depth alone) — not real motion, just local depth-map noise/texture at
+each point's new pixel location. **Fixed** by having all 8 points share one depth value per frame (the anchor's own,
+sampled once) instead of each re-sampling the map (`scripts_local/part2b_build_real_history.py`,
+`backproject_shared_z`); re-ran inference on the corrected input — see the result directly below. This means the
+cosine -0.60 / -0.97 numbers above were measured on an input with incoherent auxiliary points and should be read with
+that caveat; the anchor's own 3D position (what both cosines are actually computed from) was not affected by this
+particular bug, but a physically incoherent 7-point "cloud" alongside it could plausibly have confused the model.
+
+**The fixed rerun changes the story, and makes it more coherent.** With the companion-point bug fixed (all 8 points now
+share the anchor's depth, physically coherent by construction) but still using estimated/assumed depth and intrinsics,
+the model does **not** repeat its earlier "confident but wrong direction" answer — it collapses to **zero predicted
+motion** instead, with the generated text an exact frame-to-frame-repeating pattern (the same degenerate output later
+also seen with real, calibrated ground truth — see below). This reframes the earlier -0.60/-0.97 cosine result: it looks
+like it was specifically the *incoherent* companion-point cloud that pushed the model into producing a confident-looking
+(but wrong) nonzero answer, and that whenever the 3D input is physically coherent — whether honestly estimated or real
+measured ground truth — the model's actual typical response to this episode is to predict no motion at all, not a wrong
+direction.
+
+Across all attempts (H1-F32's single real frame: wrong direction, cosine -0.62; H3 with noisy per-frame depth: zero
+motion; H3 with a coherent-anchor-but-incoherent-companions bug: wrong direction, cosine -0.60; H3 with that bug fixed:
+zero motion; H3 with real calibrated ground truth: zero motion), the pattern is consistent: single-frame history (H1)
+produces a confident wrong guess (it structurally cannot know direction), while three-frame history (H3) with a
+*physically coherent* 3D input consistently collapses to zero motion rather than committing to any direction. This
+rules out duplicated history, noisy/temporally-inconsistent depth, and the companion-point depth-resampling bug as
+explanations, and points at a genuine limitation of applying MolmoMotion (trained on outdoor/tracked-object footage
+such as DAVIS) to tabletop robot manipulation: given a coherent but visually/numerically unfamiliar 3D scene, the model
+prefers not to commit to a motion prediction at all.
 
 ![Real history (green/cyan) moves right; the predicted path (magenta) goes almost the opposite way](docs/expected/part2b_real_history_vs_predicted.jpg)
 
@@ -358,10 +386,14 @@ between the scheduler's mandatory noise and a *moving* commanded trajectory that
 * No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds (tested:
   5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
   above is simply one run that happened to work, not a demonstrated best or typical outcome.
-* Part 2's zero-motion result is specific to the replicated-history input (see the H1-F32 experiment above). With genuinely
-  real, non-duplicated history the model does predict real motion in some inputs but gets the direction wrong, and in the
-  strongest version of the test (real, calibrated 3D ground truth traced back to the original BridgeData V2 episode — see
-  "With REAL ground truth" above) it predicts no motion at all. 4 independent attempts, 4 different real inputs, none
-  correct — this looks like a genuine domain-transfer limitation (outdoor/tracked-object training data vs. tabletop robot
-  manipulation) rather than an input-construction artifact, and not something fixable without retraining or fine-tuning on
-  robot-manipulation data.
+* Part 2's zero-motion result is specific to the replicated-history (H1-F32, 1 real frame) and physically-coherent-3D-input
+  (H3, 3 real frames) cases. A single-frame history always produces a confident but wrong-direction guess (H1-F32: cosine
+  -0.62 on `bridge`, -0.32 on a `dobbe`-sourced episode with a handheld-camera framing closer to MolmoMotion's strong
+  EgoDex domain — still wrong, and low-confidence/noisy-looking, so single-frame history is too weak a test to draw a
+  domain conclusion from either way). A genuinely coherent 3-frame history (H3) — whether honestly-estimated depth with
+  the companion-point bug fixed, or real calibrated 3D ground truth traced back to the original BridgeData V2 episode —
+  consistently collapses to **zero predicted motion** rather than a wrong direction; the one case that gave a confident
+  wrong-direction answer (cosine -0.60) turned out to have a bug feeding the model a physically incoherent companion-point
+  cloud, and does not reproduce once fixed. This looks like a genuine domain-transfer limitation (outdoor/tracked-object
+  training data vs. tabletop robot manipulation) rather than an input-construction artifact, and not something fixable
+  without retraining or fine-tuning on robot-manipulation data.

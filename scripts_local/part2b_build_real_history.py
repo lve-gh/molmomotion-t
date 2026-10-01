@@ -77,16 +77,28 @@ def estimate_depth(image: Image.Image):
     return depth
 
 
-def backproject(points_2d, depth_map):
+def sample_depth_at(x, y, depth_map):
+    xi, yi = int(np.clip(round(x), 0, IMG_W - 1)), int(np.clip(round(y), 0, IMG_H - 1))
+    z = float(depth_map[yi, xi])
+    if z <= 1e-3:
+        y0, y1 = max(0, yi - 3), min(IMG_H, yi + 4)
+        x0, x1 = max(0, xi - 3), min(IMG_W, xi + 4)
+        patch = depth_map[y0:y1, x0:x1]
+        z = float(np.median(patch[patch > 1e-3])) if (patch > 1e-3).any() else 0.6
+    return z
+
+
+def backproject_shared_z(points_2d, z):
+    """Backproject all P points using ONE shared depth z (the anchor's own depth at this frame), not a
+    per-point lookup into the depth map. A per-point lookup was the earlier (buggy) approach: shifting all 8
+    points by the SAME 2D pixel offset but then re-sampling a spatially-varying, noisy depth map at each
+    point's new (different) location gives each point a different implied Z purely from local depth-map
+    texture/noise, not from real motion -- confirmed by inspecting the resulting per-point displacements,
+    which ranged from 0.05m to 0.77m for points that are supposed to rigidly track the same 3cm-wide gripper
+    (std 0.33m in Z alone). Sharing one Z across all 8 points keeps them rigid by construction, matching the
+    physical assumption (a jittered cluster on one rigid object) instead of fighting the noisy depth map."""
     out = np.zeros((points_2d.shape[0], 3), dtype=np.float32)
     for i, (x, y) in enumerate(points_2d):
-        xi, yi = int(np.clip(round(x), 0, IMG_W - 1)), int(np.clip(round(y), 0, IMG_H - 1))
-        z = float(depth_map[yi, xi])
-        if z <= 1e-3:
-            y0, y1 = max(0, yi - 3), min(IMG_H, yi + 4)
-            x0, x1 = max(0, xi - 3), min(IMG_W, xi + 4)
-            patch = depth_map[y0:y1, x0:x1]
-            z = float(np.median(patch[patch > 1e-3])) if (patch > 1e-3).any() else 0.6
         out[i] = [(x - CX) / FX * z, (y - CY) / FY * z, z]
     return out
 
@@ -116,7 +128,8 @@ def main():
             points_2d = points_2d_t0 + shift[None, :]
             points_2d[:, 0] = np.clip(points_2d[:, 0], 2, IMG_W - 2)
             points_2d[:, 1] = np.clip(points_2d[:, 1], 2, IMG_H - 2)
-        points_3d_history[fi] = backproject(points_2d, depth_map_t0)
+        anchor_z = sample_depth_at(points_2d[0, 0], points_2d[0, 1], depth_map_t0)
+        points_3d_history[fi] = backproject_shared_z(points_2d, anchor_z)
         print(f"frame {frame_idx}: anchor 2D {points_2d[0]}, anchor depth {points_3d_history[fi, 0, 2]:.3f} m")
 
     K = np.array([[FX, 0, CX], [0, FY, CY], [0, 0, 1]], dtype=np.float32)
@@ -142,7 +155,11 @@ def main():
                  "Depth + intrinsics are still model-estimated / assumed (same caveat as the main Part 2 example). "
                  "The query 'object' is the arm/gripper itself (auto-tracked via a dark-pixel centroid in a fixed "
                  "ROI, not hand-annotated), so the anchor point sits near the wrist joint rather than a specific "
-                 "fingertip pixel.",
+                 "fingertip pixel. FIXED (previously buggy): all 8 query points share ONE depth value per frame "
+                 "(the anchor's own, sampled once), not a per-point lookup into the depth map at each point's "
+                 "shifted location -- the per-point lookup silently implied wildly incoherent relative motion "
+                 "(0.05m to 0.77m displacement across 8 points meant to rigidly track one 3cm gripper) purely "
+                 "from local depth-map noise/texture, not real motion.",
     }
     (OUT_DIR / "meta.json").write_text(json.dumps(meta, indent=2))
     print("Saved real-history ShareRobot MolmoMotion inputs to", OUT_DIR)

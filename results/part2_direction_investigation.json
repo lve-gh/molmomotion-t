@@ -1,8 +1,9 @@
 {
- "summary": "Three independent attempts to fix the Part-2 ShareRobot direction problem, all falsified the duplicated-history hypothesis as the sole cause.",
- "attempt_1_H1F32_single_real_frame": {
+ "summary": "Five independent attempts to fix the Part-2 ShareRobot direction/motion problem. Duplicated history, noisy depth, and a companion-point depth-resampling bug are all ruled out as the explanation. The clearest pattern: single-frame history (H1-F32) always guesses a confident-but-wrong direction; three-frame history (H3) with a physically COHERENT 3D input (whether honestly-estimated or real measured ground truth) consistently collapses to zero predicted motion instead.",
+ "attempt_1_H1F32_single_real_frame_bridge": {
   "history_frames": 1,
   "real_or_duplicated": "real (only 1 frame exists)",
+  "source": "bridge (fixed lab tripod camera over a WidowX arm)",
   "result": "nonzero motion predicted (path 0.44m)",
   "direction_cosine_vs_real": -0.62
  },
@@ -13,14 +14,28 @@
   "result": "zero motion predicted (model likely distrusted an implausible 3D history)",
   "direction_cosine": null
  },
- "attempt_3_H3_real_frames_consistent_depth": {
+ "attempt_3_H3_real_frames_consistent_depth_BUGGY": {
   "history_frames": 3,
   "real_or_duplicated": "real (planning split, frames 15/20/25)",
-  "depth": "single t0 depth map reused for all 3 frames (physically consistent)",
+  "depth": "single t0 depth map reused for all 3 frames (physically consistent FOR THE ANCHOR ONLY)",
   "result": "nonzero motion predicted (3D path length 0.39m)",
   "direction_cosine_vs_real_future": -0.6,
   "direction_cosine_vs_own_history": -0.97,
-  "note": "predicted direction is close to OPPOSITE the real history direction it was just given"
+  "note": "predicted direction is close to OPPOSITE the real history direction it was just given",
+  "BUG_found_later": "the 7 non-anchor query points in this input had a SEPARATE bug: each was re-sampling the depth map at its own shifted 2D location instead of sharing the anchor's depth, giving incoherent per-point displacements (0.05m to 0.77m for points meant to rigidly track one ~3cm gripper -- std 0.33m in depth alone). The anchor's own position (what this cosine is computed from) was not directly affected, but the model was given a physically-incoherent 7-point companion cloud alongside it. See attempt_3b for the same experiment with this bug fixed -- the result changes."
+ },
+ "attempt_3b_H3_real_frames_consistent_depth_FIXED": {
+  "history_frames": 3,
+  "real_or_duplicated": "real (planning split, frames 15/20/25)",
+  "depth": "single t0 depth map; ALL 8 points (anchor + 7 companions) now share one depth value per frame instead of each re-sampling the map -- fixes the attempt_3 bug, otherwise identical setup",
+  "script": "scripts_local/part2b_build_real_history.py (backproject_shared_z) + scripts_local/part2b_infer_fixed.py",
+  "real_history_vec": [0.1389, 0.1666, -0.4717],
+  "real_future_vec": [0.0197, -0.0272, 0.0067],
+  "result": "ZERO motion predicted (frame-to-frame-IDENTICAL repeating output text -- same degenerate pattern as attempt_4)",
+  "direction_cosine_pred_vs_real_future": 0.0,
+  "direction_cosine_pred_vs_real_history": 0.0,
+  "inference_seconds": 3005.4,
+  "note": "With the companion-point bug fixed (physically coherent 8-point cloud, still estimated/assumed depth and intrinsics), the model does NOT repeat attempt_3's confident-wrong-direction answer -- it collapses to zero motion instead, matching attempt_4's real-ground-truth result. This suggests attempt_3's nonzero wrong-direction answer was specifically a response to the incoherent companion points, not a representative 'the model tried and got it wrong' result."
  },
  "attempt_4_H3_calibrated_REAL_ground_truth": {
   "history_frames": 3,
@@ -32,7 +47,17 @@
   "result": "ZERO motion predicted (the model's output text is a flat, frame-to-frame-IDENTICAL relative-offset pattern; the anchor's predicted path start == end)",
   "direction_cosine_pred_vs_REAL_future": 0.0,
   "inference_seconds": 2843.6,
-  "note": "This is the strongest version of the experiment: real, non-duplicated, non-estimated history AND a real (not self-reconstructed) ground-truth future to compare against. The model still fails -- not with a wrong direction this time, but with no predicted motion at all, on an input whose real displacement is not small (0.13m history, 0.10m future)."
+  "note": "The strongest version of the experiment: real, non-duplicated, non-estimated history AND a real (not self-reconstructed) ground-truth future to compare against. The model still fails -- zero predicted motion, same degenerate repeating-text pattern as attempt_3b -- on an input whose real displacement is not small (0.13m history, 0.10m future)."
  },
- "conclusion": "Across 4 independently-constructed real (non-duplicated) history inputs -- including, in the final attempt, REAL measured 3D ground truth (not estimated depth) traced back to the original BridgeData V2 episode and a self-calibrated camera (not an assumed FOV alone) -- the model never produces a correct, confident future-motion prediction for this ShareRobot/tabletop-manipulation episode: wrong direction in 3 attempts (cosine -0.60 to -0.62, one case exactly opposite its own input history at -0.97), and zero motion in the 4th despite a clean, well-grounded, genuinely non-trivial-displacement input. Ruling out, in order: duplicated history (attempts 2-4 all used real history), depth-estimation noise (attempt 3 fixed depth consistency, still wrong; attempt 4 removed depth estimation entirely, still fails), and now also the quality/correctness of the 3D input itself (attempt 4's input is about as clean as this machine can produce without the original dataset's own camera calibration file, which doesn't appear to be published). This is a genuine, well-characterized model limitation on out-of-domain (tabletop robot manipulation) inputs, not an artifact of our data pipeline -- the kind of result that would need retraining or fine-tuning on robot-manipulation data to fix, not more careful input construction."
+ "attempt_5_H1F32_single_real_frame_dobbe_camera_framing_test": {
+  "history_frames": 1,
+  "real_or_duplicated": "real (only 1 frame exists)",
+  "source": "dobbe (handheld stick-mounted phone camera, real home -- visually closer to MolmoMotion's strong EgoDex domain than bridge's fixed lab tripod)",
+  "hypothesis_tested": "does camera framing/domain (not 'robot manipulation' per se) explain the Part-2 failures, given MolmoMotion predicts EgoDex (handheld/egocentric) accurately (1-2cm mean L2 vs authors) but bridge (fixed tripod) poorly",
+  "episode": "55_dobbe#episode_3368, action: approach the cabinet door, largest-displacement (250.6px) trajectory-split entry out of 759 dobbe episodes",
+  "result": "nonzero but very low-confidence/noisy-looking motion predicted (path 0.085m vs GT displacement ~0.28m)",
+  "direction_cosine_vs_real": -0.32,
+  "note": "Wrong direction, but less extremely wrong than attempt_1's bridge result (-0.62), AND much lower magnitude/confidence -- looks closer to noise than a confident wrong guess. INCONCLUSIVE for the camera-framing hypothesis: H1's structural inability to know direction from 1 frame likely dominates any domain effect. Would need a real multi-frame (H3) dobbe history for a fair test; not pursued further (no planning-split real-video source found/attempted for dobbe)."
+ },
+ "conclusion": "Across 5 independently-constructed real (non-duplicated) attempts, MolmoMotion never produces a correct, confident future-motion prediction for ShareRobot/tabletop-manipulation episodes. The clearest pattern, after finding and fixing a real input-construction bug (attempt_3's incoherent companion points): single-frame history (H1-F32) structurally cannot know direction and always guesses wrong, on both a bridge (cosine -0.62) and a dobbe (cosine -0.32, noisy/low-confidence) episode -- too weak a test to confirm or rule out a camera-framing effect. Three-frame history (H3) with a PHYSICALLY COHERENT 3D input -- whether honestly-estimated depth with the companion-point bug fixed (attempt_3b) or real calibrated ground truth traced to the original BridgeData V2 episode (attempt_4) -- consistently collapses to ZERO predicted motion (identical degenerate repeating-text generation pattern in both cases, despite non-trivial real displacement in the input: 0.13-0.52m). The one case that produced a confident wrong-direction answer (attempt_3, cosine -0.60) is now understood to have fed the model a physically incoherent companion-point cloud, and does not reproduce once fixed. This is a genuine, well-characterized model limitation on out-of-domain (tabletop robot manipulation) inputs -- not an artifact of our data pipeline (which was audited and one real bug found, fixed, and shown not to change the qualitative conclusion) -- the kind of result that would need retraining or fine-tuning on robot-manipulation data to fix, not more careful input construction."
 }
