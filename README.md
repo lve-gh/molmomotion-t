@@ -219,6 +219,17 @@ wrong direction this time, no motion at all, despite a clean, real, well-grounde
 explanation too (there is no estimated depth left to blame) and leaves genuine out-of-domain generalization as the
 only remaining explanation across all 4 independent attempts.
 
+**Is this just one hard scene? Tested a second, independent episode.** Every attempt so far used the same scene
+(`episode_4263`, moving a pan). A single scene is too small a sample to conclude the model never works on ShareRobot, so
+a second, visually and task-wise different episode was found and tested the same way: `episode_4801` ("lift the pot and
+move it towards the blue cloth"), located via a full listing of the planning-split archive cross-referenced against its
+task descriptions, with the same bug-fixed (`backproject_shared_z`) estimated-depth methodology from the start. Result:
+the predicted anchor path is **frozen at the same 3D point for 28 of its 30 predicted frames** (one tiny 2-frame blip
+that snaps straight back) -- net predicted displacement is exactly zero, the same degenerate behavior seen on the first
+scene's two cleanest attempts. This directly answers the "maybe it's just this scene" question: it isn't -- a second,
+independent episode (pot pick-and-place instead of pan push) collapses to the same near-total prediction freeze
+(`scripts_local/part2e_build_second_episode.py`, `results/part2_direction_investigation.json`, attempt 6).
+
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
 ![ShareRobot input](docs/expected/part2_input_points.jpg)
@@ -396,4 +407,13 @@ between the scheduler's mandatory noise and a *moving* commanded trajectory that
   wrong-direction answer (cosine -0.60) turned out to have a bug feeding the model a physically incoherent companion-point
   cloud, and does not reproduce once fixed. This looks like a genuine domain-transfer limitation (outdoor/tracked-object
   training data vs. tabletop robot manipulation) rather than an input-construction artifact, and not something fixable
-  without retraining or fine-tuning on robot-manipulation data.
+  without retraining or fine-tuning on robot-manipulation data. Confirmed on a SECOND, independent episode
+  (`episode_4801`, pot pick-and-place) with the same bug-fixed methodology: the predicted anchor path freezes at the same
+  point for 28 of 30 frames -- not a one-scene fluke. This is consistent with MolmoMotion's own paper
+  ([arXiv:2606.18558](https://arxiv.org/abs/2606.18558)): its training mix includes real robot manipulation (DROID,
+  ~27K clips, fixed third-person camera) but never Bridge/WidowX/ShareRobot by name, and the paper's own robot-domain
+  transfer result is obtained by *finetuning* MolmoMotion on DROID ("starts with substantially lower trajectory error
+  and reaches the best performance much quicker" than training from scratch) -- no zero-shot baseline is reported even
+  for DROID, and no lightweight adaptation technique (LoRA, prompt tuning, calibration conditioning) is mentioned as an
+  alternative to full finetuning. Good zero-shot transfer to an unseen robot platform without any training was not
+  something the authors themselves demonstrate, so our result is not a surprising or likely-fixable gap in our pipeline.
