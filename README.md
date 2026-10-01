@@ -230,6 +230,23 @@ scene's two cleanest attempts. This directly answers the "maybe it's just this s
 independent episode (pot pick-and-place instead of pan push) collapses to the same near-total prediction freeze
 (`scripts_local/part2e_build_second_episode.py`, `results/part2_direction_investigation.json`, attempt 6).
 
+**A legitimate, non-training fix: the decoding strategy, not the domain, may be the real bottleneck.**
+`predict_trajectory()` always calls `generate()` with `beam_size=1` and no sampler — pure **greedy** decoding, a
+well-documented cause of repetitive/degenerate generation when a model is uncertain. The library already ships a full
+sampling toolkit (`molmo_motion/nn/beam_search.py`: `MultinomialSampler` for temperature-based stochastic decoding,
+plus repetition-blocking constraints) that `predict_trajectory()` simply never exposes. Calling `generate()` directly
+with `sampler=MultinomialSampler(temperature=0.8)` — same weights, same inputs as attempts 3b/6 above, zero training,
+zero future-frame leakage, just a different (also-shipped) decoding strategy — **breaks the freeze on both episodes**:
+cosine 0.13 on the pan episode (first positive result on it across 7 attempts) and **cosine 0.76 on the pot episode**,
+the best directional result in the entire investigation (`scripts_local/part2f_sampling_test.py`,
+`results/part2_direction_investigation.json`, attempt 7).
+
+![Sampled decoding (T=0.8): predicted path (magenta) now points the same way as the real continuation (cyan)](docs/expected/part2f_sampled_decoding_episode4801.jpg)
+
+Caveat, consistent with the Part-3 lesson about single-seed results: only one seed per episode has been tried at this
+temperature so far. The effect is real (both episodes moved from a hard zero to genuine, often well-directed motion),
+but a proper multi-seed sweep is needed before claiming a reliably fixed configuration rather than a promising sample.
+
 Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
 
 ![ShareRobot input](docs/expected/part2_input_points.jpg)
