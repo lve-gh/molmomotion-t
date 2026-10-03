@@ -6,6 +6,7 @@ same 2D-path evaluation as the original (part2_score_h1.py) -- only the decoding
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -21,11 +22,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lowmem_model import load_lowmem  # noqa: E402
 
-DATA_DIR = ROOT / "data" / "sharerobot_example"
-OUT_DIR = ROOT / "outputs" / "part2g"
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--data-dir", default="data/sharerobot_example")
+_ap.add_argument("--out-dir", default="outputs/part2g")
+_ap.add_argument("--temperature", type=float, default=0.8, help="0 disables sampling (greedy)")
+_ap.add_argument("--seed", type=int, default=42)
+_ap.add_argument("--tag", default="")
+_args = _ap.parse_args()
+
+DATA_DIR = ROOT / _args.data_dir
+OUT_DIR = ROOT / _args.out_dir
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-TEMPERATURE = 0.8
-SEED = 42
+TEMPERATURE = _args.temperature
+SEED = _args.seed
+TAG = _args.tag or f"temp{TEMPERATURE}_seed{SEED}"
 
 
 def project(xyz, K):
@@ -64,7 +74,7 @@ def main():
             continue
         batch[k] = v
 
-    sampler = MultinomialSampler(temperature=TEMPERATURE)
+    sampler = MultinomialSampler(temperature=TEMPERATURE) if TEMPERATURE != 0 else None
 
     import time
     t0 = time.perf_counter()
@@ -100,12 +110,18 @@ def main():
     pred_vec = pred_anchor_2d[-1] - pred_anchor_2d[0]
     denom = np.linalg.norm(gt_vec) * np.linalg.norm(pred_vec)
     cos_sim = float(np.dot(gt_vec, pred_vec) / denom) if denom > 1e-6 else None
+    real_disp_px = float(np.linalg.norm(gt_vec))
+    pred_disp_px = float(np.linalg.norm(pred_vec))
+    magnitude_ratio = pred_disp_px / real_disp_px if real_disp_px > 1e-6 else None
 
     result = {
-        "id": meta["id"], "action": meta["action"], "checkpoint": "H1-F32",
-        "decoding": f"sampled, temperature={TEMPERATURE}, seed={SEED} (vs. original greedy)",
-        "original_greedy_cosine": -0.62,
+        "id": meta["id"], "action": meta["action"], "checkpoint": "H1-F32", "data_dir": str(DATA_DIR),
+        "decoding": "greedy" if TEMPERATURE == 0 else f"sampled, temperature={TEMPERATURE}, seed={SEED}",
+        "original_greedy_cosine_on_BUGGY_input": -0.62,
         "direction_cosine_similarity": cos_sim,
+        "real_displacement_px": real_disp_px,
+        "predicted_displacement_px": pred_disp_px,
+        "magnitude_ratio_pred_over_real": magnitude_ratio,
         "waypoint_to_path_px_mean": float(waypoint_to_path_px.mean()),
         "endpoint_px": endpoint_px,
         "predicted_anchor_displacement_px": float(np.linalg.norm(pred_anchor_2d[-1] - pred_anchor_2d[0])),
@@ -114,10 +130,11 @@ def main():
         "future_text_sample": future_text[:600],
     }
     print(json.dumps(result, indent=2))
-    (OUT_DIR / "result.json").write_text(json.dumps(result, indent=2))
-    np.savez(OUT_DIR / "pred.npz", pred=pred, K=K)
+    (OUT_DIR / f"result_{TAG}.json").write_text(json.dumps(result, indent=2))
+    np.savez(OUT_DIR / f"pred_{TAG}.npz", pred=pred, K=K)
 
-    img = Image.open(DATA_DIR / "frame_future_real.jpg")
+    future_img_path = DATA_DIR / "frame_future_real.jpg"
+    img = Image.open(future_img_path if future_img_path.exists() else DATA_DIR / "frame_t+0.jpg")
     fig, ax = plt.subplots(figsize=(7, 5.4))
     ax.imshow(img)
     ax.plot(gt_path[:, 0], gt_path[:, 1], "-o", c="lime", lw=2, label="annotated gripper path (ShareRobot)")
@@ -133,9 +150,9 @@ def main():
     ax.set_xlim(all_x.min() - pad, all_x.max() + pad)
     ax.set_ylim(all_y.max() + pad, all_y.min() - pad)
     ax.legend(loc="lower left", fontsize=8)
-    ax.set_title(f"episode_25423 (H1-F32): sampled decoding T={TEMPERATURE} vs. original greedy (cosine -0.62)")
+    ax.set_title(f"{meta['id']} (H1-F32): decoding={result['decoding']}")
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig.png", dpi=130)
+    fig.savefig(OUT_DIR / f"fig_{TAG}.png", dpi=130)
     print("Saved to", OUT_DIR)
 
 

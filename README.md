@@ -268,6 +268,97 @@ The only real future frame (frame_15): the gripper has moved towards the spoon.
 
 ![ShareRobot real frame_15](docs/expected/part2_real_frame15.jpg)
 
+**Sampled decoding also works on an episode where the gripper already holds the target object.** All attempts above used
+episodes where the gripper has to *reach for* something. A different, arguably easier case is an episode where the
+object is already grasped and the task is just to carry it to the one container in the scene — `episode_4441`
+("move towards the bowl" / "drop the carrot into the bowl", gripper holds the carrot from frame 0). Reproduce:
+
+```
+curl -sL "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/planning/images/rt_frames_success.tar.gz.part.aa" \
+  | gzip -dc | tar -x -C data/sharerobot_real_history9 --strip-components=9 \
+  --wildcards "mnt/hpfs/baaiei/jyShi/ShareRobot/planning/rt_frames_success/rtx_frames_success_14/49_bridge#episode_4441/*"
+python scripts_local/part2p_build_carrot_bowl.py
+python scripts_local/part2f_sampling_test.py --data-dir data/sharerobot_real_history9_inputs --out-dir outputs/part2p \
+  --temperature 0.8 --ngram-block 0 --seed 42 --future-horizon 30 --compare-step 2
+```
+
+On the image plane (x, y) the predicted direction matches the real continuation closely (cosine 0.97); the full 3D
+cosine is lower (0.11) because the real motion's dominant component is depth (the carrot descending into the bowl),
+which the prediction underestimates — see "Known limitations" for the 2D-vs-3D distinction this uncovered more
+generally.
+
+![Carrot already in the gripper, moving towards the one bowl: predicted path (magenta) tracks the real continuation (cyan) well in x/y](docs/expected/part2p_carrot_to_bowl.jpg)
+
+**Testing the idea more broadly surfaced a different, more specific pattern than "it just works when already holding
+something."** Three more ShareRobot source datasets (different robot platforms/cameras, `trajectory` split, H1-F32
+single-frame, same sampled decoding) were tested starting from an *empty* gripper with a reach/pick instruction, to
+see whether the model tracks the named target or something else:
+
+```
+mkdir -p data/six_examples
+curl -sL -o data/six_examples/jaco_play_frame0.png \
+  "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/trajectory/images/rtx_frames_success_1/27_jaco_play%23episode_104/frame_0.png"
+curl -sL -o data/six_examples/berkeley_autolab_ur5_frame0.png \
+  "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/trajectory/images/rtx_frames_success_20/43_berkeley_autolab_ur5%23episode_506/frame_0.png"
+curl -sL -o data/six_examples/robo_set_frame0.png \
+  "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/trajectory/images/rtx_frames_success_48/62_robo_set%23episode_4845/frame_0.png"
+python scripts_local/part2l_build_six_examples.py   # builds inputs for every record in results/six_examples_records.json
+                                                      # that has a downloaded frame0 (skips the rest; the 3 above are enough
+                                                      # to reproduce this section, the other 3 records cover a wider benchmark)
+for name in jaco_play berkeley_autolab_ur5 robo_set; do
+  python scripts_local/part2g_sampling_original_h1.py --data-dir data/six_examples_inputs/$name \
+    --out-dir outputs/six_examples/$name --temperature 0.8 --seed 42 --tag sampled
+done
+```
+
+`jaco_play` ("pick up the apple", apple not yet grasped): the model confidently predicts motion (cosine 0.98 vs. the
+annotated path) — but towards the nearby yellow bucket, not the apple or the farther black bin:
+
+![jaco_play: prediction heads for the nearby yellow bucket, not the apple](docs/expected/part2_jaco_play_nearest_bin.jpg)
+
+`berkeley_autolab_ur5` ("move towards the blue cup", blue cup is the named target but farther away): same pattern,
+cosine 0.95, predicted path goes to the nearer brown cup instead:
+
+![berkeley_autolab_ur5: prediction heads for the nearer brown cup, not the named blue one](docs/expected/part2_berkeley_nearest_cup.jpg)
+
+`robo_set` ("reach for the ketchup bottle" — note: *reach for*, nothing to place, gripper is empty) sharpens the
+pattern into something more specific than "nearest object": cosine 0.99, but the predicted displacement is tiny
+(19.9 px vs. 268.3 px real, 7% of the real distance) and points at a small green bowl sitting immediately next to the
+gripper's fingers, not the bottle:
+
+![robo_set: empty gripper, prediction points at the bowl right next to it, not the (named, farther) bottle](docs/expected/part2_robo_set_empty_gripper.jpg)
+![Crop near the gripper: the bowl is close enough that the 20px predicted shift covers most of the distance to it](docs/expected/part2_robo_set_bowl_crop.jpg)
+
+The common thread across all three: the model is not reaching for the named object — it is **placing** something
+into the nearest container-shaped region, as if the gripper already held an object, regardless of whether it
+actually does (here it is empty and the instruction is to *reach*, not place) or what the instruction names.
+
+**Does naming the correct container explicitly fix it?** ShareRobot's own per-frame annotations give `episode_104`
+(the `jaco_play` episode above) a second, later waypoint with a different instruction for the same scene: *"move the
+apple towards the black bowl"* — i.e. the dataset's own text for explicitly naming the (correct, farther) target
+instead of the generic pick-up phrasing used above.
+
+```
+mkdir -p data/six_examples_inputs/jaco_play_blackbowl
+cp data/six_examples_inputs/jaco_play/*.pt data/six_examples_inputs/jaco_play/*.jpg data/six_examples_inputs/jaco_play_blackbowl/
+python -c "
+import json
+meta = json.loads(open('data/six_examples_inputs/jaco_play/meta.json').read())
+meta['action'] = 'move the apple towards the black bowl'
+json.dump(meta, open('data/six_examples_inputs/jaco_play_blackbowl/meta.json', 'w'), indent=2)
+"
+python scripts_local/part2g_sampling_original_h1.py --data-dir data/six_examples_inputs/jaco_play_blackbowl \
+  --out-dir outputs/six_examples/jaco_play_blackbowl --temperature 0.8 --seed 42 --tag sampled
+```
+
+Barely changes anything: cosine 0.98 (unchanged within sampling noise) and the predicted displacement actually grows
+only slightly, from 43.6% to 48.4% of the real distance. The two predicted paths overlap almost exactly:
+
+![Naming the correct (farther) bowl explicitly: the predicted path barely moves from the original "pick up the apple" prediction](docs/expected/part2_jaco_play_blackbowl_compare.jpg)
+
+So the text of the instruction has, at best, a weak effect — the scene's layout (where a container-shaped object
+happens to sit relative to the gripper) dominates over what the instruction actually names.
+
 ## Part 3: DaS driven by the MolmoMotion prediction
 
 Run inside the DaS environment, from `repos/DiffusionAsShader`:

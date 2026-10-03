@@ -1,0 +1,178 @@
+{
+ "utokyo_pr2_tabletop_manipulation_converted_externally_to_rlds": {
+  "id": 1,
+  "image_path": "rtx_frames_success_0/10_utokyo_pr2_tabletop_manipulation_converted_externally_to_rlds#episode_9/frame_0.png",
+  "meta_data": {
+   "original_dataset": "utokyo_pr2_tabletop_manipulation_converted_externally_to_rlds",
+   "original_width": 128,
+   "original_height": 128
+  },
+  "instruction": "reach for the grapes",
+  "trajectory": [
+   [
+    115.24812030075186,
+    45.233082706766915
+   ],
+   [
+    98.64661654135338,
+    44.03007518796992
+   ],
+   [
+    80.84210526315789,
+    35.609022556390975
+   ],
+   [
+    64.0,
+    25.022556390977442
+   ]
+  ]
+ },
+ "ucsd_kitchen_dataset_converted_externally_to_rlds": {
+  "id": 72,
+  "image_path": "rtx_frames_success_0/12_ucsd_kitchen_dataset_converted_externally_to_rlds#episode_15/frame_0.png",
+  "meta_data": {
+   "original_dataset": "ucsd_kitchen_dataset_converted_externally_to_rlds",
+   "original_width": 640,
+   "original_height": 480
+  },
+  "instruction": "reach for the microwave handle",
+  "trajectory": [
+   [
+    215.33834586466168,
+    334.4360902255639
+   ],
+   [
+    297.14285714285717,
+    287.5187969924812
+   ],
+   [
+    381.35338345864665,
+    217.7443609022556
+   ],
+   [
+    445.11278195488717,
+    131.12781954887217
+   ]
+  ]
+ },
+ "nyu_door_opening_surprising_effectiveness": {
+  "id": 200,
+  "image_path": "rtx_frames_success_0/25_nyu_door_opening_surprising_effectiveness#episode_1/frame_0.png",
+  "meta_data": {
+   "original_dataset": "nyu_door_opening_surprising_effectiveness",
+   "original_width": 960,
+   "original_height": 720
+  },
+  "instruction": "approach the cabinet door handles",
+  "trajectory": [
+   [
+    409.62406015037595,
+    707.3684210526314
+   ],
+   [
+    395.18796992481197,
+    555.7894736842104
+   ],
+   [
+    429.47368421052624,
+    279.69924812030075
+   ],
+   [
+    480.0,
+    124.51127819548873
+   ]
+  ]
+ },
+ "jaco_play": {
+  "id": 282,
+  "image_path": "rtx_frames_success_1/27_jaco_play#episode_104/frame_0.png",
+  "meta_data": {
+   "original_dataset": "jaco_play",
+   "original_width": 224,
+   "original_height": 224
+  },
+  "instruction": "pick up the apple",
+  "trajectory": [
+   [
+    217.52601156069363,
+    74.45086705202311
+   ],
+   [
+    198.75144508670522,
+    53.73410404624278
+   ],
+   [
+    170.91329479768785,
+    40.138728323699425
+   ],
+   [
+    134.01156069364163,
+    25.895953757225435
+   ],
+   [
+    108.11560693641619,
+    20.069364161849713
+   ],
+   [
+    66.68208092485548,
+    27.83815028901734
+   ],
+   [
+    43.3757225433526,
+    55.028901734104046
+   ]
+  ]
+ },
+ "berkeley_autolab_ur5": {
+  "id": 3577,
+  "image_path": "rtx_frames_success_20/43_berkeley_autolab_ur5#episode_506/frame_0.png",
+  "meta_data": {
+   "original_dataset": "berkeley_autolab_ur5",
+   "original_width": 640,
+   "original_height": 480
+  },
+  "instruction": "move towards the blue cup",
+  "trajectory": [
+   [
+    356.3434903047092,
+    244.65373961218836
+   ],
+   [
+    187.9224376731302,
+    239.33518005540168
+   ],
+   [
+    117.00831024930748,
+    244.65373961218836
+   ]
+  ]
+ },
+ "robo_set": {
+  "id": 6152,
+  "image_path": "rtx_frames_success_48/62_robo_set#episode_4845/frame_0.png",
+  "meta_data": {
+   "original_dataset": "robo_set",
+   "original_width": 424,
+   "original_height": 240
+  },
+  "instruction": "reach for the ketchup bottle",
+  "trajectory": [
+   [
+    113.17293233082708,
+    121.99248120300751
+   ],
+   [
+    200.04511278195488,
+    95.69172932330825
+   ],
+   [
+    288.5112781954887,
+    94.09774436090227
+   ],
+   [
+    380.9624060150376,
+    105.25563909774435
+   ]
+  ]
+ }
+}

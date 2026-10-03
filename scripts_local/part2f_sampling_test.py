@@ -53,6 +53,18 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.8)
     ap.add_argument("--ngram-block", type=int, default=0, help="0 disables; else RepeatedNGramBlockingConstraint size")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--future-horizon", type=int, default=30,
+                     help="stated in the prompt AND used for parsing num_frames -- NOTE: the model does not "
+                          "reliably respect a small value here in how much text it generates; keep max-new-tokens "
+                          "generous regardless (see --max-new-tokens)")
+    ap.add_argument("--max-new-tokens", type=int, default=None,
+                     help="defaults to 160*max(future_horizon,30) -- generous, decoupled from future_horizon, so "
+                          "a small future_horizon doesn't truncate generation mid-frame and break parsing")
+    ap.add_argument("--compare-step", type=int, default=-1,
+                     help="which predicted-frame INDEX (0-based into the parsed future_horizon frames) to use for "
+                          "the direction-cosine comparison, instead of always the last (-1) -- use this to match "
+                          "the model's nominal step rate to a short real future-checkpoint gap (see the timescale "
+                          "discussion in results/part2_direction_investigation.json)")
     a = ap.parse_args()
 
     torch.manual_seed(a.seed)
@@ -74,11 +86,11 @@ def main():
     K = torch.load(DATA_DIR / "intrinsics_K.pt").numpy()
 
     inputs = processor(history_frames=history_frames, points_2d_at_t0=points_2d_at_t0,
-                        points_3d_history=points_3d_history, action=meta["action"], future_horizon=30)
+                        points_3d_history=points_3d_history, action=meta["action"], future_horizon=a.future_horizon)
     inputs = {k: v.cuda() if torch.is_tensor(v) else v for k, v in inputs.items()}
 
     # --- replicate predict_trajectory()'s logic, but with sampler/constraints passed through ---
-    max_new_tokens = 160 * 30
+    max_new_tokens = a.max_new_tokens or 160 * max(a.future_horizon, 30)
     batch = {"input_ids": inputs["input_ids"], "attention_mask": inputs.get("attention_mask")}
     for k, v in inputs.items():
         if k in ("target_tokens", "loss_masks", "input_ids", "attention_mask"):
@@ -104,14 +116,16 @@ def main():
     parsed = parse_tracks_text(future_text)
     anchor = points_3d_history[-1, 0].numpy()
     if parsed is None:
-        pred = np.zeros((8, 30, 3), dtype=np.float32) + anchor[None, None, :]
+        pred = np.zeros((8, a.future_horizon, 3), dtype=np.float32) + anchor[None, None, :]
     else:
-        delta, _vis = tracks_to_array(parsed, num_points=8, num_frames=30, start_timestamp=3.0)
+        delta, _vis = tracks_to_array(parsed, num_points=8, num_frames=a.future_horizon, start_timestamp=3.0)
         pred = np.asarray(delta, dtype=np.float32) + anchor[None, None, :]
 
     pred_anchor_path = pred[0]
-    pred_vec = pred_anchor_path[-1] - pred_anchor_path[0]
-    path_len = float(np.linalg.norm(np.diff(pred_anchor_path, axis=0), axis=-1).sum())
+    compare_idx = a.compare_step if a.compare_step >= 0 else pred_anchor_path.shape[0] + a.compare_step
+    compare_idx = int(np.clip(compare_idx, 0, pred_anchor_path.shape[0] - 1))
+    pred_vec = pred_anchor_path[compare_idx] - pred_anchor_path[0]
+    path_len = float(np.linalg.norm(np.diff(pred_anchor_path[:compare_idx + 1], axis=0), axis=-1).sum())
 
     # real future anchor: from meta.json if present, else compute the same way part2b_infer_fixed.py did
     if "real_future_3d_anchor" in meta:
@@ -137,10 +151,13 @@ def main():
     result = {
         "id": meta["id"], "action": meta["action"],
         "temperature": a.temperature, "ngram_block": a.ngram_block, "seed": a.seed,
+        "future_horizon_requested": a.future_horizon, "max_new_tokens": max_new_tokens, "compare_step_index": compare_idx,
         "real_history_vec": real_history_vec.tolist(), "real_future_vec": real_future_vec.tolist(),
         "predicted_vec": pred_vec.tolist(), "predicted_path_len_m": path_len,
         "direction_cosine_pred_vs_real_future": cos(pred_vec, real_future_vec),
         "direction_cosine_pred_vs_real_history": cos(pred_vec, real_history_vec),
+        "direction_cosine_xy_pred_vs_real_future": cos(pred_vec[:2], real_future_vec[:2]),
+        "direction_cosine_xy_pred_vs_real_history": cos(pred_vec[:2], real_history_vec[:2]),
         "inference_seconds": dt,
         "future_text_sample": future_text[:800],
         "future_text_len": len(future_text),
@@ -155,22 +172,33 @@ def main():
     hist_2d = project(points_3d_history[:, 0].numpy(), K)
     future_2d = project(real_future_3d[None, :], K)[0]
 
+    def arrow_path(ax, xy, color, label, lw=2, start_marker=True):
+        ax.plot(xy[:, 0], xy[:, 1], "-", c=color, lw=lw, label=label, zorder=5)
+        if start_marker:
+            ax.plot(xy[0, 0], xy[0, 1], "o", c=color, ms=7, mec="white", mew=1.2, zorder=6)
+        for i in range(len(xy) - 1):
+            ax.annotate("", xy=xy[i + 1], xytext=xy[i],
+                        arrowprops=dict(arrowstyle="-|>", color=color, lw=lw, mutation_scale=16), zorder=6)
+
     img = Image.open(DATA_DIR / "frame_future_real.jpg")
     fig, ax = plt.subplots(figsize=(7.5, 5.7))
     ax.imshow(img)
-    ax.plot(hist_2d[:, 0], hist_2d[:, 1], "-o", c="lime", lw=2, label="real history (anchor)")
-    ax.plot([hist_2d[-1, 0], future_2d[0]], [hist_2d[-1, 1], future_2d[1]], "-o", c="cyan", lw=2,
-            label="real continuation")
+    arrow_path(ax, hist_2d, "lime", "real history (arrow = direction of real past motion)")
+    arrow_path(ax, np.stack([hist_2d[-1], future_2d]), "cyan", "real continuation (arrow = where it actually went)",
+               start_marker=False)
     for p in range(pred_2d.shape[0]):
         ax.plot(pred_2d[p, :, 0], pred_2d[p, :, 1], "-", c="magenta", lw=1.3, alpha=0.85,
-                label=f"predicted (T={a.temperature}, seed={a.seed})" if p == 0 else None)
-        ax.plot(pred_2d[p, -1, 0], pred_2d[p, -1, 1], "x", c="magenta", ms=6)
+                label=f"predicted path, full rollout (T={a.temperature}, seed={a.seed})" if p == 0 else None)
+        ax.plot(pred_2d[p, -1, 0], pred_2d[p, -1, 1], "x", c="magenta", ms=6, mew=1.5, alpha=0.6)
+        ax.plot(pred_2d[p, 0, 0], pred_2d[p, 0, 1], "o", c="magenta", ms=5, mec="white", mew=1)
+        ax.plot(pred_2d[p, compare_idx, 0], pred_2d[p, compare_idx, 1], "D", c="yellow", ms=7, mec="black", mew=1,
+                label=f"compare point (step {compare_idx}, timescale-matched)" if p == 0 else None)
     all_x = np.concatenate([pred_2d[:, :, 0].ravel(), hist_2d[:, 0], [future_2d[0]], [0, img.width]])
     all_y = np.concatenate([pred_2d[:, :, 1].ravel(), hist_2d[:, 1], [future_2d[1]], [0, img.height]])
     pad = 20
     ax.set_xlim(all_x.min() - pad, all_x.max() + pad)
     ax.set_ylim(all_y.max() + pad, all_y.min() - pad)
-    ax.legend(loc="lower left", fontsize=8)
+    ax.legend(loc="lower left", fontsize=7.5)
     ax.set_title(f"{meta['id']}: sampled decoding (T={a.temperature}, ngram_block={a.ngram_block}, seed={a.seed})")
     fig.tight_layout()
     fig.savefig(OUT_DIR / f"fig_{tag}.png", dpi=130)
