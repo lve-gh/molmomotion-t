@@ -1,0 +1,128 @@
+{
+  "42": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.6840733581659745,
+    "motion_rms_err_px": 323.8151851272424,
+    "pearson_r_tracked_vs_commanded_dx": -0.22473524862822844,
+    "first_frame_lost": null,
+    "seed": 42,
+    "wall_seconds": 452.99136757850647
+  },
+  "123": {
+    "rider_visible_frames": 39,
+    "rider_ncc_mean": 0.5621987453528813,
+    "motion_rms_err_px": 273.8348300846862,
+    "pearson_r_tracked_vs_commanded_dx": -0.22607716641577993,
+    "first_frame_lost": 6,
+    "seed": 123,
+    "wall_seconds": 488.41760182380676
+  },
+  "7": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.8285947843473784,
+    "motion_rms_err_px": 324.3952814256472,
+    "pearson_r_tracked_vs_commanded_dx": -0.22331587999862343,
+    "first_frame_lost": null,
+    "seed": 7,
+    "wall_seconds": 487.0965642929077
+  },
+  "1": {
+    "rider_visible_frames": 35,
+    "rider_ncc_mean": 0.5696745143861187,
+    "motion_rms_err_px": 205.303290747958,
+    "pearson_r_tracked_vs_commanded_dx": 0.2141018878771983,
+    "first_frame_lost": 18,
+    "seed": 1,
+    "wall_seconds": 487.9841513633728
+  },
+  "2": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.8737120908133837,
+    "motion_rms_err_px": 322.799294862097,
+    "pearson_r_tracked_vs_commanded_dx": -0.7992706784025065,
+    "first_frame_lost": null,
+    "seed": 2,
+    "wall_seconds": 486.38555550575256
+  },
+  "999": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.726587504756694,
+    "motion_rms_err_px": 355.00923928491017,
+    "pearson_r_tracked_vs_commanded_dx": -0.45622849823636064,
+    "first_frame_lost": null,
+    "seed": 999,
+    "wall_seconds": 487.9404807090759
+  },
+  "3": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.6530705325457514,
+    "motion_rms_err_px": 184.93578862898832,
+    "pearson_r_tracked_vs_commanded_dx": 0.5955874098230215,
+    "first_frame_lost": null,
+    "seed": 3,
+    "wall_seconds": 414.87235403060913
+  },
+  "4": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.6366724298924816,
+    "motion_rms_err_px": 299.4635936950036,
+    "pearson_r_tracked_vs_commanded_dx": -0.29960337942068394,
+    "first_frame_lost": null,
+    "seed": 4,
+    "wall_seconds": 418.1035099029541
+  },
+  "5": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.9039953582140864,
+    "motion_rms_err_px": 323.0047897095671,
+    "pearson_r_tracked_vs_commanded_dx": -0.15249955105304333,
+    "first_frame_lost": null,
+    "seed": 5,
+    "wall_seconds": 418.6786096096039
+  },
+  "6": {
+    "rider_visible_frames": 29,
+    "rider_ncc_mean": 0.5787457647372265,
+    "motion_rms_err_px": 135.66646644130117,
+    "pearson_r_tracked_vs_commanded_dx": 0.7933255211363334,
+    "first_frame_lost": 21,
+    "seed": 6,
+    "wall_seconds": 418.9781548976898
+  },
+  "8": {
+    "rider_visible_frames": 25,
+    "rider_ncc_mean": 0.5739718943226094,
+    "motion_rms_err_px": 28.53678568478165,
+    "pearson_r_tracked_vs_commanded_dx": 0.9921927001505536,
+    "first_frame_lost": 25,
+    "seed": 8,
+    "wall_seconds": 419.4203157424927
+  },
+  "9": {
+    "rider_visible_frames": 49,
+    "rider_ncc_mean": 0.673258016304094,
+    "motion_rms_err_px": 495.70056041408947,
+    "pearson_r_tracked_vs_commanded_dx": -0.8378546573944312,
+    "first_frame_lost": null,
+    "seed": 9,
+    "wall_seconds": 419.12230229377747
+  },
+  "10": {
+    "rider_visible_frames": 27,
+    "rider_ncc_mean": 0.5467713250189411,
+    "motion_rms_err_px": 405.2277354465897,
+    "pearson_r_tracked_vs_commanded_dx": -0.3498974120882837,
+    "first_frame_lost": 20,
+    "seed": 10,
+    "wall_seconds": 417.9656867980957
+  },
+  "11": {
+    "rider_visible_frames": 48,
+    "rider_ncc_mean": 0.6189055102212089,
+    "motion_rms_err_px": 485.98788767418245,
+    "pearson_r_tracked_vs_commanded_dx": -0.56837696040054,
+    "first_frame_lost": 10,
+    "seed": 11,
+    "wall_seconds": 417.7032573223114
+  }
+}

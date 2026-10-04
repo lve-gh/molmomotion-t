@@ -503,6 +503,57 @@ between the scheduler's mandatory noise and a *moving* commanded trajectory that
 
 ![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)
 
+**Is the instability caused by this machine's 8 GB VRAM / NF4 quantization, rather than the scheduler itself?** All of the
+above ran NF4-quantized (4-bit) weights on an 8 GB card. A natural hypothesis: 4-bit quantization error compounds with the
+scheduler's mandatory stochastic noise and amplifies the run-to-run variance; full precision on more VRAM might be far more
+stable. Tested on a Kaggle notebook with 2x T4 (32 GB combined), same config (10 steps, CFG 1.0, DPM scheduler
+`timestep_spacing="trailing"`, same prompt, same tracking video), same 14 seed values as the local sweep, no NF4 — weights
+loaded directly from `EXCAI/Diffusion-As-Shader` and split across both GPUs via `accelerate`, no block offload needed since
+32 GB comfortably fits everything.
+
+One correction en route: T4 (Turing, sm75) rejects `bfloat16` tensors in its memory-efficient attention kernel ("Expected
+query, key and value to all be of dtype: {Half, Float}. Got ... BFloat16"), which forces a fallback to the MATH attention
+backend that materializes the full O(seq²) attention matrix (~56 GB for this sequence length) and OOMs. `float16` **is**
+natively supported by T4's efficient-attention kernel, so the no-quantization run is in fp16, not bf16 — still full
+precision with no 4-bit quantization, just not bit-for-bit the same floating-point format as the local bf16-compute-dtype
+NF4 setup.
+
+Result: **no meaningful difference.**
+
+| | NF4, bf16 compute (local, 8 GB) | No quantization, fp16 (Kaggle, 2x T4, 32 GB) |
+|---|---|---|
+| median r | -0.35 | -0.23 |
+| mean r | -0.12 | -0.11 |
+| seeds with r > 0.7 | 2 / 14 (14%) | 2 / 14 (14%) |
+
+Full distributions (same 14 seed values, sorted): NF4 in `results/part3_scheduler_diagnosis.json`
+(`FINAL_seed_distribution_at_10steps_cfg1_dpm_n14`); no-quantization run in `results/part3_kaggle_fp16_seeds.json`.
+One seed (42) even flips sign between the two setups (r = 0.91 locally vs r = -0.22 with no quantization) — a reminder that
+individual-seed comparisons are not meaningful here (see "Reproducibility" above); only the *distribution* across many
+seeds is. **This rules out this machine's 8 GB VRAM / NF4 quantization as the cause**: removing quantization entirely,
+on 4x the VRAM, reproduces essentially the same median correlation and the same ~14% hit rate. The root cause is the
+scheduler's mandatory stochastic noise interacting with commanded motion (established above), not a precision or
+hardware limitation of this specific machine.
+
+Reproduce: the generation script is `scripts_local/kaggle_das_fp16_sweep.py` (needs a Kaggle account, a GPU T4 x2
+notebook, and the small control-signal assets — `tracking_video.mp4`, `t0_480x720.png`, `motion_curve_px.npy`,
+`pred_and_gt.npz` from `outputs/part3/`, plus `models/cogvideox_tracking.py` from the DaS repo — uploaded as a Kaggle
+dataset attached to the notebook; it downloads the DaS weights straight from `EXCAI/Diffusion-As-Shader` on HuggingFace
+at runtime). Paste it into a new Kaggle notebook with that dataset attached and the accelerator set to GPU T4 x2, or
+push it with the `kaggle` CLI after `kaggle kernels init -p <dir>` creates the needed `kernel-metadata.json`:
+
+```
+pip install kaggle
+export KAGGLE_API_TOKEN=<your token, from kaggle.com/settings -> Create New API Token>
+kaggle kernels init -p <dir containing a copy of kaggle_das_fp16_sweep.py>   # then edit kernel-metadata.json:
+                                                                              # "enable_gpu": true, "accelerator": "nvidiaTeslaT4", "accelerator_count": 2
+kaggle kernels push -p <dir>
+kaggle kernels status <your-username>/<kernel-slug>
+kaggle kernels output <your-username>/<kernel-slug> -p outputs/part3_kaggle_fp16
+```
+
+Raw per-seed results: `results/part3_kaggle_fp16_seeds.json`.
+
 ## Known limitations
 
 * One clip per part. Part 3's "expected results" (r = 0.91) use one specific seed that a 14-seed sweep at the same
@@ -513,6 +564,10 @@ between the scheduler's mandatory noise and a *moving* commanded trajectory that
 * No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds (tested:
   5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
   above is simply one run that happened to work, not a demonstrated best or typical outcome.
+* Not a hardware/quantization problem either: the same 14 seeds re-run with no NF4 quantization on 4x the VRAM (2x T4
+  on Kaggle, full fp16 — bf16 is not supported by T4's efficient-attention kernel) gives essentially the same
+  distribution (median r -0.23 vs -0.35 locally, both 2/14 seeds above r = 0.7) — see "Is the instability caused by
+  this machine's 8 GB VRAM / NF4 quantization" above.
 * Part 2's zero-motion result is specific to the replicated-history (H1-F32, 1 real frame) and physically-coherent-3D-input
   (H3, 3 real frames) cases. A single-frame history always produces a confident but wrong-direction guess (H1-F32: cosine
   -0.62 on `bridge`, -0.32 on a `dobbe`-sourced episode with a handheld-camera framing closer to MolmoMotion's strong
