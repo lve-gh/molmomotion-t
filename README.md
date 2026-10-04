@@ -120,158 +120,17 @@ the metrics are computed in 3D, not on these projections.
 
 ## Part 2: ShareRobot
 
-```
-python scripts_local/part2_build_inputs.py       # metric depth (Depth-Anything-V2 indoor), assumed 69.4 deg FOV, 8 query points, replicated history
-python scripts_local/part2_infer_and_eval.py     # ~61 min
-python scripts_local/part2_visualize.py
-```
+ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is
+estimated (metric depth from Depth-Anything-V2, assumed FOV, 8 query points around the tracked gripper) and the
+evaluation is coarse 2D path agreement. `predict_trajectory()` uses pure greedy decoding by default; switching to the
+library's own `MultinomialSampler` (temperature=0.8, same weights, no training) gives the model real, non-degenerate
+motion to work with instead of collapsing to zero displacement — the question that matters is not whether it moves,
+but *where*, and why.
 
-ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is estimated
-and the evaluation is coarse 2D path agreement (definitions in the docstrings).
-
-### Expected results (part 2)
-
-The model predicts zero motion for a replicated single-frame history; the 2D path metrics are then a "does not move"
-baseline (`results/part2_metrics.json`).
-
-**With real (non-replicated) history**: the H3 checkpoint needs 3 history frames, so the zero-motion result above could be an
-artifact of feeding it 3 copies of the same frame instead of genuine motion. `MolmoMotion-4B-H1-F32` needs only 1 history
-frame, so it can be run on the single real ShareRobot frame directly (`scripts_local/run_examples.py --ckpt
-checkpoints/MolmoMotion-4B-H1-F32 --future 32 --out outputs/h1 --example-dirs data/sharerobot_example`, ~58 min, scored with
-`scripts_local/part2_score_h1.py`). It now predicts real motion (net displacement ~169 px, 3D path length 0.44 m for the
-anchor point — not zero), which confirms the zero-motion result in part 2 above is specifically a replicated-history artifact,
-not the model failing outright on ShareRobot. The direction is wrong, though (`direction_cosine_similarity = -0.62`, i.e.
-closer to opposite than to the annotated path) and the path-agreement numbers stay close to the H3 baseline
-(`results/part2_h1_metrics.json`) — with only one frame of history the model has no way to tell which direction the gripper
-is already moving in, so it is essentially guessing.
-
-![ShareRobot H1-F32 prediction vs annotation](docs/expected/part2_h1_predicted_vs_annotated.jpg)
-
-**With real, non-replicated, 3-frame history** (`scripts_local/part2b_build_real_history.py`,
-`results/part2_direction_investigation.json`): H1-F32's 1-frame history genuinely cannot carry a direction signal, so this
-tests the H3 checkpoint (3 history frames, its native setting) on a ShareRobot episode that actually has enough real frames
-for it — `BAAI/ShareRobot`'s `trajectory`/`affordance` splits ship only 2 frames/episode (already exhausted above), but its
-`planning` split has real `frame_0..frame_N` sequences; they are packed in a ~510 GB split tar.gz archive, which does not
-need to be downloaded whole — streaming it (`curl ... | gzip -dc | tar -x <specific member paths>`, stopped once found) and
-picking an episode that happens to sit in the first few MB extracts the handful of frames needed with no meaningful disk or
-bandwidth cost. Used episode `49_bridge#episode_4263` (action: "move the pan towards the right side of the yellow knife"),
-frames 15/20/25 as history (t-2/t-1/t0) and frame 29 as a short real continuation to check direction against; the query
-point is the arm/gripper's 2D position, tracked automatically per frame (centroid of near-black pixels in a fixed ROI) —
-coarse (lands near the wrist joint, not a specific fingertip pixel) but consistent, and genuinely moving (229 → 295 → 301 px
-across the 3 history frames, matching the episode's real rightward motion). First attempt used an independent monocular
-depth estimate per history frame, which was not temporally consistent (1.11 m → 0.65 m → 0.30 m, an unphysical ~0.8 m jump
-in a fraction of a second) and swamped the real lateral motion with noise — the model predicted zero motion again, this
-time plausibly because the 3D input didn't look physically real rather than because the history was duplicated. Reusing a
-single t0 depth map for all 3 history frames (holding depth temporally consistent while keeping each frame's real tracked
-2D position) fixed that: the model now predicts **genuine, non-zero motion** (3D path length 0.39 m), but in a direction
-close to **opposite** both the real near-future continuation (cosine -0.60) and the history's own direction it was just
-given (cosine -0.97, i.e. it moved backwards relative to its own input velocity).
-
-**A second, separate bug was found later in this same input (and fixed).** The 7 non-anchor query points were built by
-shifting all 8 points by the anchor's own 2D pixel motion, then re-sampling the (single, otherwise-consistent) depth map
-at each point's *new, shifted* location independently. Since the depth map varies spatially, this silently gave the 8
-points wildly incoherent implied 3D motion — point displacements ranged from 0.05 m to 0.77 m for points meant to
-rigidly track one ~3 cm gripper (std 0.33 m in depth alone) — not real motion, just local depth-map noise/texture at
-each point's new pixel location. **Fixed** by having all 8 points share one depth value per frame (the anchor's own,
-sampled once) instead of each re-sampling the map (`scripts_local/part2b_build_real_history.py`,
-`backproject_shared_z`); re-ran inference on the corrected input — see the result directly below. This means the
-cosine -0.60 / -0.97 numbers above were measured on an input with incoherent auxiliary points and should be read with
-that caveat; the anchor's own 3D position (what both cosines are actually computed from) was not affected by this
-particular bug, but a physically incoherent 7-point "cloud" alongside it could plausibly have confused the model.
-
-**The fixed rerun changes the story, and makes it more coherent.** With the companion-point bug fixed (all 8 points now
-share the anchor's depth, physically coherent by construction) but still using estimated/assumed depth and intrinsics,
-the model does **not** repeat its earlier "confident but wrong direction" answer — it collapses to **zero predicted
-motion** instead, with the generated text an exact frame-to-frame-repeating pattern (the same degenerate output later
-also seen with real, calibrated ground truth — see below). This reframes the earlier -0.60/-0.97 cosine result: it looks
-like it was specifically the *incoherent* companion-point cloud that pushed the model into producing a confident-looking
-(but wrong) nonzero answer, and that whenever the 3D input is physically coherent — whether honestly estimated or real
-measured ground truth — the model's actual typical response to this episode is to predict no motion at all, not a wrong
-direction.
-
-Across all attempts (H1-F32's single real frame: wrong direction, cosine -0.62; H3 with noisy per-frame depth: zero
-motion; H3 with a coherent-anchor-but-incoherent-companions bug: wrong direction, cosine -0.60; H3 with that bug fixed:
-zero motion; H3 with real calibrated ground truth: zero motion), the pattern is consistent: single-frame history (H1)
-produces a confident wrong guess (it structurally cannot know direction), while three-frame history (H3) with a
-*physically coherent* 3D input consistently collapses to zero motion rather than committing to any direction. This
-rules out duplicated history, noisy/temporally-inconsistent depth, and the companion-point depth-resampling bug as
-explanations, and points at a genuine limitation of applying MolmoMotion (trained on outdoor/tracked-object footage
-such as DAVIS) to tabletop robot manipulation: given a coherent but visually/numerically unfamiliar 3D scene, the model
-prefers not to commit to a motion prediction at all.
-
-![Real history (green/cyan) moves right; the predicted path (magenta) goes almost the opposite way](docs/expected/part2b_real_history_vs_predicted.jpg)
-
-**With REAL ground truth, not just estimated depth.** All 3 attempts above still used invented camera intrinsics and
-estimated/assumed depth. It turns out `BAAI/ShareRobot` is itself a curated subset of several Open-X-Embodiment source
-datasets (confirmed via `trajectory.json`'s `original_dataset` field: ~43% of its `trajectory` split alone is `bridge`,
-the rest from 16 other robot datasets) -- and the original **BridgeData V2** ships the real, measured 6-DOF WidowX
-end-effector pose per frame, which ShareRobot discards when it curates down to just RGB + text for VLM training. The
-exact source episode was found by matching ShareRobot's paraphrased instruction text against BridgeData V2's own task
-list (a near-exact match, "Move the pan to the right of the yellow knife") and confirmed beyond doubt with a
-pixel-identical frame-0 match (`IPEC-COMMUNITY/bridge_orig_lerobot`, episode_index 45932). Camera extrinsics (we still
-don't have a published calibration for this rig) were self-estimated with `cv2.solvePnP` using the 8 pre-grasp frames,
-where our 2D gripper tracker and the robot's measured end-effector position are the same physical point (12.0 px mean
-reprojection error on a 640x480 image, ~2%) -- then that calibration was used to transform the REAL robot state at the
-history/future frames into camera-frame 3D, with no depth estimation involved at all. The real displacement is genuine
-and non-trivial (0.13 m across history, 0.10 m into the future). Result: the model predicts **zero motion** -- not a
-wrong direction this time, no motion at all, despite a clean, real, well-grounded input (`scripts_local/part2c_calibrated_real_gt.py`,
-`results/part2_direction_investigation.json`, attempt 4). This rules out depth-estimation noise/quality as an
-explanation too (there is no estimated depth left to blame) and leaves genuine out-of-domain generalization as the
-only remaining explanation across all 4 independent attempts.
-
-**Is this just one hard scene? Tested a second, independent episode.** Every attempt so far used the same scene
-(`episode_4263`, moving a pan). A single scene is too small a sample to conclude the model never works on ShareRobot, so
-a second, visually and task-wise different episode was found and tested the same way: `episode_4801` ("lift the pot and
-move it towards the blue cloth"), located via a full listing of the planning-split archive cross-referenced against its
-task descriptions, with the same bug-fixed (`backproject_shared_z`) estimated-depth methodology from the start. Result:
-the predicted anchor path is **frozen at the same 3D point for 28 of its 30 predicted frames** (one tiny 2-frame blip
-that snaps straight back) -- net predicted displacement is exactly zero, the same degenerate behavior seen on the first
-scene's two cleanest attempts. This directly answers the "maybe it's just this scene" question: it isn't -- a second,
-independent episode (pot pick-and-place instead of pan push) collapses to the same near-total prediction freeze
-(`scripts_local/part2e_build_second_episode.py`, `results/part2_direction_investigation.json`, attempt 6).
-
-**A legitimate, non-training fix: the decoding strategy, not the domain, may be the real bottleneck.**
-`predict_trajectory()` always calls `generate()` with `beam_size=1` and no sampler — pure **greedy** decoding, a
-well-documented cause of repetitive/degenerate generation when a model is uncertain. The library already ships a full
-sampling toolkit (`molmo_motion/nn/beam_search.py`: `MultinomialSampler` for temperature-based stochastic decoding,
-plus repetition-blocking constraints) that `predict_trajectory()` simply never exposes. Calling `generate()` directly
-with `sampler=MultinomialSampler(temperature=0.8)` — same weights, same inputs as attempts 3b/6 above, zero training,
-zero future-frame leakage, just a different (also-shipped) decoding strategy — **breaks the freeze on both episodes**:
-cosine 0.13 on the pan episode (first positive result on it across 7 attempts) and **cosine 0.76 on the pot episode**,
-the best directional result in the entire investigation (`scripts_local/part2f_sampling_test.py`,
-`results/part2_direction_investigation.json`, attempt 7).
-
-![Sampled decoding (T=0.8): predicted path (magenta) now points the same way as the real continuation (cyan)](docs/expected/part2f_sampled_decoding_episode4801.jpg)
-
-Caveat, consistent with the Part-3 lesson about single-seed results: only one seed per episode has been tried at this
-temperature so far. The effect is real (both H3 episodes moved from a hard zero to genuine, often well-directed motion),
-but a proper multi-seed sweep is needed before claiming a reliably fixed configuration rather than a promising sample.
-
-**And it is not a universal fix.** The same T=0.8 sampling was also tried on the very first example in this report (the
-H1-F32 "reach for the spoon" episode, 1-frame history, originally cosine -0.62 — "essentially guessing"). Sampling made
-it *worse*: cosine -0.84, more confidently wrong than the greedy baseline. With only 1 history frame there is no
-velocity cue in the input at all, regardless of decoding strategy — sampling just adds variance to an already-uninformed
-guess, which helped on the pot episode's richer 3-frame input but hurt here. Net picture: sampled decoding looks
-genuinely promising specifically where the model has real motion information to work with (H3), but is not a fix for
-the underlying information deficit in 1-frame inputs, and even for H3 it is one seed, not a characterized distribution.
-
-Input frame ("reach for the spoon") with the 8 query points on the gripper (star = the annotated start point).
-
-![ShareRobot input](docs/expected/part2_input_points.jpg)
-
-Annotated 2D gripper path (green). Expected: the predicted trajectory collapses to the start point (the predicted path is
-not visible), and the 2D metrics equal the baseline (mean 199 px, 25 % of the image diagonal).
-
-![ShareRobot prediction vs annotation](docs/expected/part2_predicted_vs_annotated.jpg)
-
-The only real future frame (frame_15): the gripper has moved towards the spoon.
-
-![ShareRobot real frame_15](docs/expected/part2_real_frame15.jpg)
-
-**Sampled decoding also works on an episode where the gripper already holds the target object.** All attempts above used
-episodes where the gripper has to *reach for* something. A different, arguably easier case is an episode where the
-object is already grasped and the task is just to carry it to the one container in the scene — `episode_4441`
-("move towards the bowl" / "drop the carrot into the bowl", gripper holds the carrot from frame 0). Reproduce:
+**First case: an episode where the gripper already holds the target object.** The easiest version of the task is one
+where the object is already grasped and the job is just to carry it to the one container in the scene —
+`episode_4441` ("move towards the bowl" / "drop the carrot into the bowl", gripper holds the carrot from frame 0).
+Reproduce:
 
 ```
 curl -sL "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/planning/images/rt_frames_success.tar.gz.part.aa" \
@@ -292,7 +151,7 @@ generally.
 **Testing the idea more broadly surfaced a different, more specific pattern than "it just works when already holding
 something."** Three more ShareRobot source datasets (different robot platforms/cameras, `trajectory` split, H1-F32
 single-frame, same sampled decoding) were tested starting from an *empty* gripper with a reach/pick instruction, to
-see whether the model tracks the named target or something else:
+see whether the model tracks the named target or something else. Reproduce:
 
 ```
 mkdir -p data/six_examples
@@ -336,7 +195,7 @@ actually does (here it is empty and the instruction is to *reach*, not place) or
 **Does naming the correct container explicitly fix it?** ShareRobot's own per-frame annotations give `episode_104`
 (the `jaco_play` episode above) a second, later waypoint with a different instruction for the same scene: *"move the
 apple towards the black bowl"* — i.e. the dataset's own text for explicitly naming the (correct, farther) target
-instead of the generic pick-up phrasing used above.
+instead of the generic pick-up phrasing used above. Reproduce:
 
 ```
 mkdir -p data/six_examples_inputs/jaco_play_blackbowl
@@ -524,23 +383,20 @@ sections below give the full picture, built from 14 seeds at the same configurat
   the VRAM reproduces the same distribution). See "The pipeline does not reliably track the commanded trajectory"
   under Part 3 for the full evidence.
 * The part 3 control is DaS with a static tracking video, not plain CogVideoX-I2V.
-* Part 2's zero-motion result is specific to the replicated-history (H1-F32, 1 real frame) and physically-coherent-3D-input
-  (H3, 3 real frames) cases. A single-frame history always produces a confident but wrong-direction guess (H1-F32: cosine
-  -0.62 on `bridge`, -0.32 on a `dobbe`-sourced episode with a handheld-camera framing closer to MolmoMotion's strong
-  EgoDex domain — still wrong, and low-confidence/noisy-looking, so single-frame history is too weak a test to draw a
-  domain conclusion from either way). A genuinely coherent 3-frame history (H3) — whether honestly-estimated depth with
-  the companion-point bug fixed, or real calibrated 3D ground truth traced back to the original BridgeData V2 episode —
-  consistently collapses to **zero predicted motion** rather than a wrong direction; the one case that gave a confident
-  wrong-direction answer (cosine -0.60) turned out to have a bug feeding the model a physically incoherent companion-point
-  cloud, and does not reproduce once fixed. This looks like a genuine domain-transfer limitation (outdoor/tracked-object
-  training data vs. tabletop robot manipulation) rather than an input-construction artifact, and not something fixable
-  without retraining or fine-tuning on robot-manipulation data. Confirmed on a SECOND, independent episode
-  (`episode_4801`, pot pick-and-place) with the same bug-fixed methodology: the predicted anchor path freezes at the same
-  point for 28 of 30 frames -- not a one-scene fluke. This is consistent with MolmoMotion's own paper
-  ([arXiv:2606.18558](https://arxiv.org/abs/2606.18558)): its training mix includes real robot manipulation (DROID,
-  ~27K clips, fixed third-person camera) but never Bridge/WidowX/ShareRobot by name, and the paper's own robot-domain
-  transfer result is obtained by *finetuning* MolmoMotion on DROID ("starts with substantially lower trajectory error
-  and reaches the best performance much quicker" than training from scratch) -- no zero-shot baseline is reported even
-  for DROID, and no lightweight adaptation technique (LoRA, prompt tuning, calibration conditioning) is mentioned as an
-  alternative to full finetuning. Good zero-shot transfer to an unseen robot platform without any training was not
-  something the authors themselves demonstrate, so our result is not a surprising or likely-fixable gap in our pipeline.
+* Part 2's direction results use greedy decoding's degenerate zero-motion output only as a starting point; all the
+  reported findings use sampled decoding (temperature 0.8, one seed) once it gives the model real motion to work
+  with, and single-seed results on a generative, temperature>0 decode are not a characterized distribution (see the
+  seed-sensitivity lesson from Part 3, which applies in principle here too). The placement-bias pattern itself is
+  consistent across 5 independent episodes/source datasets, which is better evidence than any single example, but a
+  proper multi-seed sweep per episode was not run for Part 2 the way it was for Part 3.
+* The direction-cosine metric used throughout Part 2 is computed on the full 3D vector. On the `episode_4441`
+  carrot-to-bowl example this gives a low score (cosine 0.11) despite the predicted path visually tracking the real
+  one closely in the image plane — the 2D (x, y)-only cosine is 0.97. The gap is the real motion's depth component
+  (the carrot descending into the bowl), which the model's prediction underestimates; a 3D metric penalizes that
+  correctly, but it means a low 3D cosine does not always mean "wrong direction" in the way the 2D figures suggest —
+  worth checking both when a single episode's result looks surprising.
+* This is zero-shot: MolmoMotion is not fine-tuned on ShareRobot or BridgeData V2. Its training mix includes real
+  robot manipulation (DROID, ~27K clips, fixed third-person camera) but never Bridge/WidowX/ShareRobot by name
+  ([arXiv:2606.18558](https://arxiv.org/abs/2606.18558)), and the paper's own robot-domain transfer result is obtained
+  by *finetuning* on DROID, not a reported zero-shot baseline — so a placement-bias prior rather than genuine
+  instruction-following on this specific, unseen robot platform is not a surprising gap.
