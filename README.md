@@ -263,13 +263,21 @@ python ../../scripts_local/convert_safetensors_bf16.py ../../checkpoints/Diffusi
 # 2) tracking video from the predicted trajectory (add --static for the no-motion control)
 python ../../scripts_local/part3_build_tracking_video.py --t0-image ../../outputs/part1/t0_frame.jpg \
    --pred-npz ../../outputs/part1/pred_and_gt.npz --out ../../outputs/part3/tracking_video.mp4 --device cuda
+cp ../../outputs/part3/tracking_video_motion_curve_px.npy ../../outputs/part3/motion_curve_px.npy  # part3_analyze.py expects this exact name
 # 3) prompt encoding (T5 in its own process), then generation
 python ../../scripts_local/part3_run_das_lowvram.py --stage encode --image ../../outputs/part3/t0_480x720.png \
    --tracking_video ../../outputs/part3/tracking_video.mp4 --prompt "A BMX rider rides through the trees"
 python ../../scripts_local/part3_run_das_lowvram.py --stage generate --block_offload --height 480 --width 720 \
    --num_inference_steps 10 --guidance_scale 1.0 --image ../../outputs/part3/t0_480x720.png \
    --tracking_video ../../outputs/part3/tracking_video.mp4 --prompt "A BMX rider rides through the trees" \
-   --output ../../outputs/part3/generated_tracked.mp4
+   --output ../../outputs/part3/generated_tracked_480x720_cfg1_10steps_offload.mp4   # part3_analyze.py expects this exact name
+# optional: the no-motion control shown in the comparison table/images (part3_analyze.py picks this up automatically if present)
+python ../../scripts_local/part3_build_tracking_video.py --t0-image ../../outputs/part1/t0_frame.jpg \
+   --pred-npz ../../outputs/part1/pred_and_gt.npz --out ../../outputs/part3/tracking_video_static.mp4 --static --device cuda
+python ../../scripts_local/part3_run_das_lowvram.py --stage generate --block_offload --height 480 --width 720 \
+   --num_inference_steps 10 --guidance_scale 1.0 --image ../../outputs/part3/t0_480x720.png \
+   --tracking_video ../../outputs/part3/tracking_video_static.mp4 --prompt "A BMX rider rides through the trees" \
+   --output ../../outputs/part3/generated_static_480x720_cfg1_10steps_offload.mp4
 python ../../scripts_local/part3_analyze.py      # metrics + figures (run from the repo root, in the MolmoMotion environment)
 ```
 
