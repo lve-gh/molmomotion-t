@@ -11,8 +11,9 @@ Code for three experiments (the write-up with figures is a separate report docum
 
 Everything was run on Windows 10, RTX 3070 Ti (8 GB VRAM), 16 GB RAM. Several stock code paths do not fit or
 crash on such a machine; the workarounds are part of the code (`scripts_local/`) and are described below.
-Each part below lists how to run it and, directly under it, the expected results (one clip per part, single run,
-single seed; the metrics are in `results/`, small deviations are normal across GPUs / dtypes, DaS is seeded with 42).
+Each part below lists how to run it and, directly under it, the expected results (metrics are in `results/`; small
+deviations are normal across GPUs / dtypes; Part 3's DaS generation is seed-sensitive by design — see its section —
+so a single run there should be read as one sample, not a guaranteed reproduction).
 The images and videos are rebuilt by `python scripts_local/make_expected_media.py`.
 
 ## Setup
@@ -31,16 +32,41 @@ git clone --recurse-submodules https://github.com/IGL-HKUST/DiffusionAsShader re
 Weights and data (plain `curl` was the only reliable way to download them here; check sha256 against the Hugging Face LFS hashes):
 
 ```
-# MolmoMotion: native checkpoint (needed for predict_trajectory) + config.yaml / tokenizer files from the same repo
+# MolmoMotion: native checkpoint (needed for predict_trajectory) + config.yaml / tokenizer files from the same repo.
+# H3-F30 (3-frame history) is used in Part 1 and in Part 2's carrot-to-bowl example; H1-F32 (1-frame history) is
+# used in the rest of Part 2. Both need the same small set of config/tokenizer files alongside model.pt.
+mkdir -p checkpoints/MolmoMotion-4B-H3-F30 checkpoints/MolmoMotion-4B-H1-F32 checkpoints/moge-vitl
 curl -L -o checkpoints/MolmoMotion-4B-H3-F30/model.pt https://huggingface.co/allenai/MolmoMotion-4B-H3-F30/resolve/main/model.pt
-bash scripts_local/download_das.sh                                   # EXCAI/Diffusion-As-Shader, 25 GB
+curl -L -o checkpoints/MolmoMotion-4B-H1-F32/model.pt https://huggingface.co/allenai/MolmoMotion-4B-H1-F32/resolve/main/model.pt
+for ckpt in MolmoMotion-4B-H3-F30 MolmoMotion-4B-H1-F32; do
+  for f in added_tokens.json chat_template.jinja config.json config.yaml configuration_molmo_motion.py \
+           generation_config.json image_processing_molmo_motion.py merges.txt model.safetensors.index.json \
+           modeling_molmo2.py preprocessor_config.json processing_molmo_motion.py processor_config.json \
+           special_tokens_map.json tokenizer.json tokenizer_config.json video_preprocessor_config.json \
+           video_processing_molmo_motion.py vocab.json; do
+    curl -L -f -o "checkpoints/$ckpt/$f" "https://huggingface.co/allenai/$ckpt/resolve/main/$f" || true
+    # -f + "|| true": a couple of these files exist for one checkpoint but not the other (e.g.
+    # processing_molmo_motion.py is H1-F32-only); a 404 on an optional file is fine, just don't abort the loop.
+  done
+done
+bash scripts_local/download_das.sh                                   # EXCAI/Diffusion-As-Shader, 25 GB (creates its own dirs)
 curl -L -o checkpoints/moge-vitl/model.pt https://huggingface.co/Ruicheng/moge-vitl/resolve/main/model.pt
 ```
 
-Data: PointMotionBench `davis/tracks/bmx-trees_{2d,3d}.npz` and `davis/davis_captions.json`
-(`allenai/PointMotionBench`), DAVIS-2017 trainval 480p frames of `bmx-trees`, ShareRobot
-`trajectory/trajectory.json` and the two frames of `trajectory/images/rtx_frames_success_13/49_bridge#episode_25423/`
-(`BAAI/ShareRobot`). Scripts expect them under `data/` (see the paths at the top of each script).
+Data (PointMotionBench ground truth for Part 1's metrics, DAVIS frames for Part 1's input and Part 3's
+real-continuation comparison):
+
+```
+mkdir -p data/pointmotionbench/davis/tracks
+curl -L -o data/pointmotionbench/davis/tracks/bmx-trees_2d.npz \
+  https://huggingface.co/datasets/allenai/PointMotionBench/resolve/main/davis/tracks/bmx-trees_2d.npz
+curl -L -o data/pointmotionbench/davis/tracks/bmx-trees_3d.npz \
+  https://huggingface.co/datasets/allenai/PointMotionBench/resolve/main/davis/tracks/bmx-trees_3d.npz
+curl -L -o /tmp/davis.zip https://data.vision.ee.ethz.ch/csergi/share/davis/DAVIS-2017-trainval-480p.zip
+unzip -o /tmp/davis.zip "DAVIS/JPEGImages/480p/bmx-trees/*" -d data/   # -> data/DAVIS/JPEGImages/480p/bmx-trees/*.jpg
+```
+
+Scripts expect data under `data/` (see the paths at the top of each script).
 
 ## Part 1: MolmoMotion on the authors' DAVIS example
 
@@ -125,7 +151,12 @@ estimated (metric depth from Depth-Anything-V2, assumed FOV, 8 query points arou
 evaluation is coarse 2D path agreement. `predict_trajectory()` uses pure greedy decoding by default; switching to the
 library's own `MultinomialSampler` (temperature=0.8, same weights, no training) gives the model real, non-degenerate
 motion to work with instead of collapsing to zero displacement — the question that matters is not whether it moves,
-but *where*, and why.
+but *where*, and why. One example below (carrot-to-bowl) uses the H3-F30 checkpoint already converted in Part 1; the
+other four use H1-F32 (1-frame history — these examples only have a single real frame), converted the same way:
+
+```
+python scripts_local/convert_ckpt_bf16.py checkpoints/MolmoMotion-4B-H1-F32/model.pt checkpoints/MolmoMotion-4B-H1-F32-bf16
+```
 
 **First case: an episode where the gripper already holds the target object.** The easiest version of the task is one
 where the object is already grasped and the job is just to carry it to the one container in the scene —
@@ -133,6 +164,7 @@ where the object is already grasped and the job is just to carry it to the one c
 Reproduce:
 
 ```
+mkdir -p data/sharerobot_real_history9
 curl -sL "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/planning/images/rt_frames_success.tar.gz.part.aa" \
   | gzip -dc | tar -x -C data/sharerobot_real_history9 --strip-components=9 \
   --wildcards "mnt/hpfs/baaiei/jyShi/ShareRobot/planning/rt_frames_success/rtx_frames_success_14/49_bridge#episode_4441/*"
@@ -195,7 +227,8 @@ actually does (here it is empty and the instruction is to *reach*, not place) or
 **Does naming the correct container explicitly fix it?** ShareRobot's own per-frame annotations give `episode_104`
 (the `jaco_play` episode above) a second, later waypoint with a different instruction for the same scene: *"move the
 apple towards the black bowl"* — i.e. the dataset's own text for explicitly naming the (correct, farther) target
-instead of the generic pick-up phrasing used above. Reproduce:
+instead of the generic pick-up phrasing used above. Reproduce (needs the `jaco_play` inputs built in the previous
+step):
 
 ```
 mkdir -p data/six_examples_inputs/jaco_play_blackbowl
