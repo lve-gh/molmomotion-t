@@ -395,11 +395,7 @@ Other files: `part3_diag_load.py`, `gpu_alloc_test.py`, `ram_selftest.py` are th
 
 ### Expected results (part 3)
 
-480x720, 49 frames, 8 fps, NF4, 10 steps, CFG off, ~330 s and ~5.5 GB peak VRAM per clip. The rider follows the commanded
-trajectory (slope 6.4 vs 9.5 px/frame, r = 0.85) and is gone by frame ~24; image quality degrades after ~12 frames
-(`results/part3_metrics.json`). **This is a real run, but — see the seed-sweep finding under "Ablations" below — not a
-typical one**: the same configuration run with other seeds usually does not track the command this well.
-
+480x720, 49 frames, 8 fps, NF4, 10 steps, CFG off, ~330 s and ~5.5 GB peak VRAM per clip (`results/part3_metrics.json`).
 Rows: real continuation, tracking video built from the prediction, DaS with the MolmoMotion trajectory, DaS with a static
 (no-motion) tracking video; columns: frames 0 / 12 / 24 / 36 / 48. In the static control the rider stays in place while the
 background dissolves.
@@ -422,152 +418,112 @@ The control signal (tracking video) built from the prediction:
 
 [![tracking video](docs/expected/part3_tracking_video.gif)](docs/expected/part3_tracking_video.mp4)
 
-**Ablations** (`scripts_local/part3b_analyze.py`, `results/part3_ablations.json`): `part3_build_tracking_video.py` now starts
-every tracking video at frame 0 with zero displacement by default (pass `--keep-start-offset` for the old behaviour), and
-`--per-point` replaces the single averaged 2D shift with an inverse-distance-weighted field of the 8 points' individual
-displacements — on this clip the two motion fields are nearly identical (Pearson r of tracked-vs-commanded dx: 0.912 mean vs.
-0.913 per-point) since the 8 query points move together. The real finding is in steps/CFG: **more steps and higher CFG make
-this NF4 + block-offloaded setup worse, not better**, and not smoothly — the DPM scheduler (`demo.py`'s default,
-`CogVideoXDPMScheduler` with `timestep_spacing="trailing"`) has a sharp cliff rather than a gradual decline.
+`part3_build_tracking_video.py` starts every tracking video at frame 0 with zero displacement by default (pass
+`--keep-start-offset` for the old behaviour), and `--per-point` replaces the single averaged 2D shift with an
+inverse-distance-weighted field of the 8 points' individual displacements — on this clip the two motion fields are
+nearly identical (Pearson r of tracked-vs-commanded dx: 0.912 mean vs. 0.913 per-point), since the 8 query points move
+together.
 
-**Scheduler/step-count diagnosis, revised** (`scripts_local/part3_run_das_lowvram.py --scheduler dpm|ddim`,
-`results/part3_scheduler_diagnosis.json`): we first ruled out `use_dynamic_cfg` as a cause — with `guidance_scale=1.0`,
-`do_classifier_free_guidance` is computed once as `guidance_scale > 1.0` before the loop and stays `False`, so the per-step
-dynamic-CFG update is dead code and no second forward pass ever runs at CFG 1.0 (checked directly in
-`models/cogvideox_tracking.py`). Sweeping the DPM scheduler by step count at the original seed (42) looked like a real,
-sharp cliff:
+### The pipeline does not reliably track the commanded trajectory, and the cause is the scheduler, not configuration or hardware
 
-| steps (DPM, CFG 1.0, seed 42) | 10 | 15 | 18 | 20 | 50 (CFG 6.0) |
-|---|---|---|---|---|---|
-| correlation with commanded motion (r) | 0.91 | 0.99 | 0.02 | 0.25 | -0.32 |
+The result above (r = 0.85 between tracked and commanded x-displacement) is a real run, but not a typical one — the
+sections below give the full picture, built from 14 seeds at the same configuration (10 steps, CFG 1.0, DPM scheduler,
+`scripts_local/part3_run_das_lowvram.py`, `results/part3_scheduler_diagnosis.json`
+→ `FINAL_seed_distribution_at_10steps_cfg1_dpm_n14`):
 
-**That conclusion was wrong, and the correction is the more important finding.** `CogVideoXDPMScheduler.step()` always adds
-a `randn` noise term scaled by `mult_noise`, regardless of `eta` — `eta` is accepted as a parameter but never used in the
-formula (checked directly in the installed `scheduling_dpm_cogvideox.py`), so this is an SDE sampler, not a deterministic
-ODE one, even nominally at `eta=0`. Two follow-up tests: (1) patching the scheduler to zero that noise term
-(`--deterministic-dpm`) made 18 steps *worse*, not better (the video collapsed to near-blank frames, visible-rider count
-dropped to 3/49) — so the noise term is load-bearing, not an optional artifact, ruling out "just make it deterministic" as
-a fix; (2) **re-running the same step counts with a different seed (123) instead of 42 breaks the entire "15 is best, 18+
-is a cliff" story** — at seed 123, correlation is poor at every step count tried, including the ones that were excellent at
-seed 42:
+* **median correlation with the commanded motion: r = -0.35; mean: r = -0.12; only 2 of 14 seeds (14%) reach r > 0.7.**
+  A typical run does not track the commanded trajectory. The r = 0.85-0.91 results shown above are real, reproducible
+  properties of their specific seeds (re-running seed 42 gives r = 0.99 on a repeat — frames are not bit-identical,
+  mean pixel difference ≈ 4/255 from non-deterministic CUDA/NF4-dequantization kernels, but nowhere near enough to
+  explain the swing to negative correlation at other seeds) — not a fluke of a single noisy run, but also not what the
+  configuration typically produces.
 
-| steps (DPM, CFG 1.0) | seed 42 | seed 123 |
-|---|---|---|
-| 10 | r = 0.91 | r = -0.69 |
-| 15 | r = 0.99 | r = -0.19 |
-| 18 | r = 0.02 | r = -0.32 |
+* **Root cause: `CogVideoXDPMScheduler.step()` always adds a `randn` noise term scaled by `mult_noise`, regardless of
+  `eta`** — `eta` is accepted as a parameter but never used in the formula (checked directly in the installed
+  `scheduling_dpm_cogvideox.py`). This is DaS's default scheduler (`demo.py`'s `timestep_spacing="trailing"`
+  configuration) and it is an SDE sampler, not a deterministic ODE one, even nominally at `eta=0`. Patching it to zero
+  that noise term (`--deterministic-dpm`) does not fix anything — it makes a given run *worse* (one 18-step case
+  collapsed to 3/49 visible-rider frames, down from a normal ~25-49) — so the noise is load-bearing to the sampling
+  process, not an optional artifact that can simply be switched off.
 
-Seed 42 happened to track the commanded motion well at 10 *and* 15 steps and badly at 18+; seed 123 tracks it badly at
-every step count tested. **The real finding is that this scheduler's mandatory noise injection gives this pipeline very
-high run-to-run variance in how well the generated motion follows the commanded trajectory, and neither step count, CFG,
-nor scheduler choice (DDIM was mediocre at every step count tried too, r ≈ 0.30) reliably controls it** — what looked like
-a clean "15 steps is a local optimum, 18+ is a cliff" pattern was a single-seed artifact. Telling a genuinely reliable
-configuration apart from noise would need many seeds per configuration with error bars, well beyond this machine's time
-budget; the honest conclusion is that single-seed step/CFG/scheduler comparisons on this setup (including the ones
-earlier in this README) are not statistically meaningful on their own.
+* **No tuning knob reliably compensates.** Step count (10/15/18/20/50), CFG (1.0/3.0/6.0), and scheduler choice (DDIM
+  instead of DPM) were all swept. None has a monotonic, predictable effect on tracking quality:
+  - A step-count sweep at a single seed can look like a clean optimum (e.g. 15 steps scoring r = 0.99, 18 steps
+    collapsing to r = 0.02) — but this pattern is seed-specific, not a property of the step count: the same sweep at
+    a different seed (123) scores poorly at every step count tried (r = -0.69, -0.19, -0.32 at 10/15/18 steps), and
+    DDIM is mediocre at every step count tried too (r ≈ 0.30).
+  - Raising CFG can rescue an individual bad seed (seed 123: r = -0.69 at CFG 1.0 → r = 0.38 at CFG 3.0, a real
+    effect) but is not reliable — the same seed at CFG 6.0 (the paper's default) drops back to r = -0.42, worse than
+    CFG 1.0.
+  - There is no separate tracking-conditioning-strength parameter to turn down either — unlike a ControlNet-style
+    `conditioning_scale`, DaS injects its tracking signal through dedicated transformer blocks baked into the model
+    (checked directly in `models/cogvideox_tracking.py`), not an adjustable scalar.
+  - `use_dynamic_cfg` is not a contributing factor at CFG 1.0: `do_classifier_free_guidance` is computed once as
+    `guidance_scale > 1.0` before the denoising loop and stays `False`, so the per-step dynamic-CFG update is dead
+    code and no second forward pass ever runs (checked directly in `models/cogvideox_tracking.py`).
 
-**Reproducibility, and the real hit rate with a proper sample** (`results/part3_scheduler_diagnosis.json`): re-running 10
-steps/seed 42 exactly reproduces the same quality tier (r = 0.99 on the repeat vs. 0.91 originally; frames are not
-bit-identical, mean pixel difference ≈ 4/255, presumably non-deterministic CUDA/NF4-dequantization kernels, but nowhere
-near enough to explain the swing to negative correlation at other seeds) — so "seed 42 is good" is a real, stable property
-of that seed, not a fluke of hardware noise on a single run. A first small sample (4 seeds) suggested a 1-in-4 hit rate;
-running **14 seeds in total at the same configuration (10 steps, CFG 1.0, DPM)** gives a properly-sized answer, and it is
-worse than that: **median correlation with the commanded motion is -0.35, mean is -0.12, and only 2 of 14 seeds (14 %)
-give a clearly good result (r > 0.7)**. The r = 0.91 used for the "expected results" above is a real but unrepresentative
-outlier (roughly top-15th-percentile), not what this configuration typically produces — a typical run does *not* track the
-commanded trajectory. "Run a few seeds and keep the one that tracks well" is a legitimate practical strategy (and cheap:
-~5 min/seed at 10 steps), but there is no configuration knob (steps, CFG, scheduler) that reliably gets a good result in
-one try, and the honest expectation for this pipeline is closer to "occasionally works" than "usually works."
+  The practical consequence: single-seed comparisons of steps, CFG, or scheduler on this pipeline (including any one
+  run shown in this README) are not statistically meaningful on their own. "Run a few seeds and keep the one that
+  tracks well" is a legitimate, cheap strategy (~5 min/seed at 10 steps, ~14% hit rate), but no configuration reliably
+  gets a good result in one try.
 
-**Does CFG rescue a bad seed? Not reliably.** Seed 123 was clearly bad at CFG 1.0 (r = -0.69, 10 steps). Raising CFG to 3.0
-(still 10 steps, same seed) improved it substantially, to r = 0.38 — a real effect, not noise. But raising CFG further to
-6.0 (the paper default) brought it back down to r = -0.42, worse than CFG 1.0. So CFG's effect is not monotonic either;
-combined with the step-count and seed results above, **no single knob we tried (steps, CFG, or scheduler choice) has a
-predictable, monotonic effect on tracking quality** in this NF4 + block-offload setup — the interaction between the
-scheduler's mandatory noise, NF4 quantization error, and the backloaded `use_dynamic_cfg` ramp (which the pipeline always
-applies, hardcoded, regardless of the `--guidance_scale` value passed in) leaves quality highly sensitive to the exact
-seed/steps/CFG combination in a way that looks close to chaotic rather than a clean quality/speed tradeoff. (There is no
-separate tracking-conditioning-strength parameter to try either — unlike a ControlNet-style `conditioning_scale`, DaS's
-tracking signal is injected through dedicated transformer blocks baked into the model, not a scalar weight we could turn
-down; checked directly in `models/cogvideox_tracking.py`.)
+* **Not caused by this machine's 8 GB VRAM or its NF4 quantization.** The same 14 seeds were re-run on a Kaggle
+  notebook with 2x T4 (32 GB combined VRAM), same configuration (10 steps, CFG 1.0, DPM scheduler, same prompt, same
+  tracking video), full precision with no 4-bit quantization — weights loaded directly from
+  `EXCAI/Diffusion-As-Shader` and split across both GPUs via `accelerate`, no block offload needed since 32 GB
+  comfortably fits everything (T4/Turing's efficient-attention kernel does not support `bfloat16` — it errors and
+  falls back to a ~56 GB MATH-backend attention matrix that OOMs — so this run used `float16`: still full precision,
+  no 4-bit quantization, just not bit-identical to the local bf16-compute-dtype NF4 setup). Result:
 
-**The instability is specific to following motion, not a generic property of this setup.** Running the *static* (no-motion)
-control at the same 3 seeds that gave wildly different results for the real trajectory (42, 123, 7; 10 steps, CFG 1.0) gives
-near-identical outcomes: the rider stays recognizable in all 49/49 frames at every seed, with NCC (0.74–0.80) and consecutive-frame
-SSIM (0.78–0.81) all in a narrow, similar band — none of the collapse-into-noise or frozen-rider failure modes seen when a real
-trajectory is commanded. So the chaotic seed-sensitivity is not a generic instability of this NF4 + block-offload + stochastic
-scheduler combination — the pipeline is quite consistent when there is nothing to track. It is specifically the interaction
-between the scheduler's mandatory noise and a *moving* commanded trajectory that is unreliable here.
+  | | NF4, bf16 compute (local, 8 GB) | No quantization, fp16 (Kaggle, 2x T4, 32 GB) |
+  |---|---|---|
+  | median r | -0.35 | -0.23 |
+  | mean r | -0.12 | -0.11 |
+  | seeds with r > 0.7 | 2 / 14 (14%) | 2 / 14 (14%) |
+
+  Essentially the same distribution (full per-seed numbers: `results/part3_scheduler_diagnosis.json` for NF4,
+  `results/part3_kaggle_fp16_seeds.json` for the no-quantization run). One seed (42) even flips sign between the two
+  setups (r = 0.91 on NF4 vs. r = -0.22 with no quantization) — consistent with the point above that only the
+  *distribution* across many seeds is meaningful here, not any individual seed. Removing quantization entirely, on 4x
+  the VRAM, does not change the median correlation or the hit rate: the cause is the scheduler's mandatory stochastic
+  noise interacting with commanded motion, not a precision or hardware limitation of this machine. Reproduce: generation
+  script `scripts_local/kaggle_das_fp16_sweep.py` (needs a Kaggle account, a GPU T4 x2 notebook, and the small
+  control-signal assets — `tracking_video.mp4`, `t0_480x720.png`, `motion_curve_px.npy`, `pred_and_gt.npz` from
+  `outputs/part3/`, plus `models/cogvideox_tracking.py` from the DaS repo — uploaded as a Kaggle dataset attached to
+  the notebook; it downloads the DaS weights straight from HuggingFace at runtime). Paste it into a new Kaggle
+  notebook with that dataset attached and the accelerator set to GPU T4 x2, or push it with the CLI:
+
+  ```
+  pip install kaggle
+  export KAGGLE_API_TOKEN=<your token, from kaggle.com/settings -> Create New API Token>
+  kaggle kernels init -p <dir containing a copy of kaggle_das_fp16_sweep.py>   # then edit kernel-metadata.json:
+                                                                                # "enable_gpu": true, "accelerator": "nvidiaTeslaT4", "accelerator_count": 2
+  kaggle kernels push -p <dir>
+  kaggle kernels status <your-username>/<kernel-slug>
+  kaggle kernels output <your-username>/<kernel-slug> -p outputs/part3_kaggle_fp16
+  ```
+
+* **The instability is specific to following motion, not a generic property of the pipeline.** Running the *static*
+  (no-motion) control at the same seeds that gave wildly different results for the real trajectory (42, 123, 7; 10
+  steps, CFG 1.0) gives near-identical, stable outcomes at every seed: the rider stays recognizable in all 49/49
+  frames, with NCC (0.74–0.80) and consecutive-frame SSIM (0.78–0.81) all in a narrow band — none of the
+  collapse-into-noise or frozen-rider failure modes seen when a real trajectory is commanded. The pipeline is
+  consistent when there is nothing to track; it is specifically the interaction between the scheduler's mandatory
+  noise and a *moving* commanded trajectory that is unreliable.
 
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
-![Scheduler/step-count cliff at seed 42 — since shown to be a single-seed artifact, see the corrected finding above](docs/expected/part3_scheduler_cliff.jpg)
-
-**Is the instability caused by this machine's 8 GB VRAM / NF4 quantization, rather than the scheduler itself?** All of the
-above ran NF4-quantized (4-bit) weights on an 8 GB card. A natural hypothesis: 4-bit quantization error compounds with the
-scheduler's mandatory stochastic noise and amplifies the run-to-run variance; full precision on more VRAM might be far more
-stable. Tested on a Kaggle notebook with 2x T4 (32 GB combined), same config (10 steps, CFG 1.0, DPM scheduler
-`timestep_spacing="trailing"`, same prompt, same tracking video), same 14 seed values as the local sweep, no NF4 — weights
-loaded directly from `EXCAI/Diffusion-As-Shader` and split across both GPUs via `accelerate`, no block offload needed since
-32 GB comfortably fits everything.
-
-One correction en route: T4 (Turing, sm75) rejects `bfloat16` tensors in its memory-efficient attention kernel ("Expected
-query, key and value to all be of dtype: {Half, Float}. Got ... BFloat16"), which forces a fallback to the MATH attention
-backend that materializes the full O(seq²) attention matrix (~56 GB for this sequence length) and OOMs. `float16` **is**
-natively supported by T4's efficient-attention kernel, so the no-quantization run is in fp16, not bf16 — still full
-precision with no 4-bit quantization, just not bit-for-bit the same floating-point format as the local bf16-compute-dtype
-NF4 setup.
-
-Result: **no meaningful difference.**
-
-| | NF4, bf16 compute (local, 8 GB) | No quantization, fp16 (Kaggle, 2x T4, 32 GB) |
-|---|---|---|
-| median r | -0.35 | -0.23 |
-| mean r | -0.12 | -0.11 |
-| seeds with r > 0.7 | 2 / 14 (14%) | 2 / 14 (14%) |
-
-Full distributions (same 14 seed values, sorted): NF4 in `results/part3_scheduler_diagnosis.json`
-(`FINAL_seed_distribution_at_10steps_cfg1_dpm_n14`); no-quantization run in `results/part3_kaggle_fp16_seeds.json`.
-One seed (42) even flips sign between the two setups (r = 0.91 locally vs r = -0.22 with no quantization) — a reminder that
-individual-seed comparisons are not meaningful here (see "Reproducibility" above); only the *distribution* across many
-seeds is. **This rules out this machine's 8 GB VRAM / NF4 quantization as the cause**: removing quantization entirely,
-on 4x the VRAM, reproduces essentially the same median correlation and the same ~14% hit rate. The root cause is the
-scheduler's mandatory stochastic noise interacting with commanded motion (established above), not a precision or
-hardware limitation of this specific machine.
-
-Reproduce: the generation script is `scripts_local/kaggle_das_fp16_sweep.py` (needs a Kaggle account, a GPU T4 x2
-notebook, and the small control-signal assets — `tracking_video.mp4`, `t0_480x720.png`, `motion_curve_px.npy`,
-`pred_and_gt.npz` from `outputs/part3/`, plus `models/cogvideox_tracking.py` from the DaS repo — uploaded as a Kaggle
-dataset attached to the notebook; it downloads the DaS weights straight from `EXCAI/Diffusion-As-Shader` on HuggingFace
-at runtime). Paste it into a new Kaggle notebook with that dataset attached and the accelerator set to GPU T4 x2, or
-push it with the `kaggle` CLI after `kaggle kernels init -p <dir>` creates the needed `kernel-metadata.json`:
-
-```
-pip install kaggle
-export KAGGLE_API_TOKEN=<your token, from kaggle.com/settings -> Create New API Token>
-kaggle kernels init -p <dir containing a copy of kaggle_das_fp16_sweep.py>   # then edit kernel-metadata.json:
-                                                                              # "enable_gpu": true, "accelerator": "nvidiaTeslaT4", "accelerator_count": 2
-kaggle kernels push -p <dir>
-kaggle kernels status <your-username>/<kernel-slug>
-kaggle kernels output <your-username>/<kernel-slug> -p outputs/part3_kaggle_fp16
-```
-
-Raw per-seed results: `results/part3_kaggle_fp16_seeds.json`.
+![Step count vs. correlation at one seed can look like a clean optimum; it does not reproduce at other seeds (see above)](docs/expected/part3_scheduler_cliff.jpg)
 
 ## Known limitations
 
-* One clip per part. Part 3's "expected results" (r = 0.91) use one specific seed that a 14-seed sweep at the same
-  configuration shows is an unrepresentative outlier — the median outcome at 10 steps/CFG 1.0/DPM is r = -0.35 (does not
-  track the command), and the reported r = 0.91 run should be read as "this configuration can work, occasionally," not
-  as the expected result of running it once.
+* One clip per part. Part 3's DaS run does not reliably track the commanded trajectory (median r = -0.35 across 14
+  seeds at the best-looking configuration; only 14% of seeds reach r > 0.7) — the root cause is the scheduler's
+  mandatory stochastic noise, confirmed not to be fixable by step count, CFG, or scheduler choice, and confirmed not
+  to be a hardware/quantization artifact of this machine (an identical 14-seed sweep with no NF4 quantization on 4x
+  the VRAM reproduces the same distribution). See "The pipeline does not reliably track the commanded trajectory"
+  under Part 3 for the full evidence.
 * The part 3 control is DaS with a static tracking video, not plain CogVideoX-I2V.
-* No steps/CFG/scheduler configuration for DaS was found to reliably track the commanded trajectory across seeds (tested:
-  5 step counts, 2 schedulers, 3 CFG values, 14 seeds at the best-looking single configuration); the "expected results"
-  above is simply one run that happened to work, not a demonstrated best or typical outcome.
-* Not a hardware/quantization problem either: the same 14 seeds re-run with no NF4 quantization on 4x the VRAM (2x T4
-  on Kaggle, full fp16 — bf16 is not supported by T4's efficient-attention kernel) gives essentially the same
-  distribution (median r -0.23 vs -0.35 locally, both 2/14 seeds above r = 0.7) — see "Is the instability caused by
-  this machine's 8 GB VRAM / NF4 quantization" above.
 * Part 2's zero-motion result is specific to the replicated-history (H1-F32, 1 real frame) and physically-coherent-3D-input
   (H3, 3 real frames) cases. A single-frame history always produces a confident but wrong-direction guess (H1-F32: cosine
   -0.62 on `bridge`, -0.32 on a `dobbe`-sourced episode with a handheld-camera framing closer to MolmoMotion's strong
