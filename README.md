@@ -147,8 +147,20 @@ the metrics are computed in 3D, not on these projections.
 ## Part 2: ShareRobot
 
 ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is
-estimated (metric depth from Depth-Anything-V2, assumed FOV, 8 query points around the tracked gripper) and the
-evaluation is coarse 2D path agreement. `predict_trajectory()` uses pure greedy decoding by default; switching to the
+estimated: `depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf` (monocular metric depth, via the `transformers`
+`depth-estimation` pipeline) gives a per-pixel depth map for the frame, and an assumed 69.4° horizontal FOV converts
+the 8 2D query points (the tracked gripper plus 7 points sampled in a small radius around it) into 3D.
+
+We did not validate this depth model's absolute accuracy against ground truth for these episodes (no LiDAR/stereo
+reference exists for ShareRobot). What we did check is spatial *consistency*: sampling the depth map independently
+at each of the 8 query points (all meant to rigidly track one ~3 cm gripper) gave physically implausible spread —
+point-to-point 3D displacements from 0.05 m to 0.77 m, std 0.33 m in depth alone — i.e. the raw per-pixel map is too
+noisy at this spatial scale to trust point-by-point. The fix used throughout (`backproject_shared_z` in
+`part2b_build_real_history.py`) has all 8 points share a single depth value per frame, sampled once at the anchor
+(gripper) point, instead of each independently re-sampling the map. This removes the implausible spread but is a
+mitigation for a known inconsistency, not a correction with a known ground-truth error bound.
+
+The evaluation itself is coarse 2D path agreement. `predict_trajectory()` uses pure greedy decoding by default; switching to the
 library's own `MultinomialSampler` (temperature=0.8, same weights, no training) gives the model real, non-degenerate
 motion to work with instead of collapsing to zero displacement — the question that matters is not whether it moves,
 but *where*, and why. One example below (carrot-to-bowl) uses the H3-F30 checkpoint already converted in Part 1; the
