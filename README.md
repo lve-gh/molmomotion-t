@@ -144,6 +144,37 @@ the metrics are computed in 3D, not on these projections.
 
 ![real future frames](docs/expected/part1_real_future_frames.jpg)
 
+### Numbers behind the "close to the authors'" claims
+
+Every qualitative statement above ("essentially equal", "heading right", "small gap") in one table, per clip, with the
+exact source file for each number:
+
+| Metric | Clip | Ours | Authors' released | Source |
+|---|---|---|---|---|
+| ADE, m | bmx-trees | 0.381 | 0.281 | `results/multi_example_metrics.json` |
+| ADE, m | car-turn | 0.506 | 0.262 | `results/multi_example_metrics.json` |
+| ADE, m | flamingo | 0.094 | 0.093 | `results/multi_example_metrics.json` |
+| FDE, m | bmx-trees | 0.727 | 0.546 | `results/multi_example_metrics.json` |
+| FDE, m | car-turn | 1.582 | 0.753 | `results/multi_example_metrics.json` |
+| FDE, m | flamingo | 0.145 | 0.145 | `results/multi_example_metrics.json` |
+| PWT (mean over 1/2/5/10/20 cm) | bmx-trees | 8.6% | 11.8% | `results/multi_example_metrics.json` |
+| PWT | car-turn | 16.8% | 21.2% | `results/multi_example_metrics.json` |
+| PWT | flamingo | 42.0% | 43.0% | `results/multi_example_metrics.json` |
+| Direction cosine (predicted vs. real heading) | bmx-trees | 0.989 | 0.995 | `results/extra_metrics.json` |
+| Direction cosine | car-turn | 0.932 | 0.993 | `results/extra_metrics.json` |
+| Direction cosine | flamingo | 0.928 | 0.920 | `results/extra_metrics.json` |
+| Mean L2 distance, ours vs. authors' own prediction, m | bmx-trees | 0.114 | — | `results/multi_example_metrics.json` (`our_vs_authors_mean_L2_m`) |
+| Mean L2 distance, ours vs. authors' | car-turn | 0.303 | — | `results/multi_example_metrics.json` |
+| Mean L2 distance, ours vs. authors' | flamingo | 0.044 | — | `results/multi_example_metrics.json` |
+| Mean L2 distance, ours vs. authors' | egodex_clean_surface | 0.019 | — | `results/noise_diagnosis.json` |
+| Mean L2 distance, ours vs. authors' | egodex_ball_base | 0.012 | — | `results/noise_diagnosis.json` |
+| Teacher-forced token match rate, default attention kernel | bmx-trees / car-turn / flamingo | 96.7% / 96.7% / 96.7% | — | `results/noise_diagnosis.json` (`teacher_forcing_vs_authors_text`) |
+| Teacher-forced token match rate, forced math-only attention | bmx-trees / car-turn / flamingo | 96.5% / 96.9% / 95.6% | — | `results/noise_diagnosis.json` |
+| Teacher-forcing logit gap at mismatches (median / max over all clips), nats | — | 0.016-0.035 / 0.27-0.37 | — | `results/noise_diagnosis.json` |
+
+("Authors' released" is blank where the authors did not release a prediction to compare against — EgoDex and the
+teacher-forcing diagnostics only have an "ours" side by construction.)
+
 ## Part 2: ShareRobot
 
 ShareRobot's `trajectory` split has two frames per episode and 2D end-effector waypoints only, so the 3D input is
