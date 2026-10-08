@@ -214,6 +214,14 @@ curl -sL "https://huggingface.co/datasets/BAAI/ShareRobot/resolve/main/planning/
 python scripts_local/part2p_build_carrot_bowl.py
 python scripts_local/part2f_sampling_test.py --data-dir data/sharerobot_real_history9_inputs --out-dir outputs/part2p \
   --temperature 0.8 --ngram-block 0 --seed 42 --future-horizon 30 --compare-step 2
+# the 30 downloaded frames (frame_0.png ... frame_29.png) are the real footage the prediction above is judged against;
+# strung together as a video so it can be watched directly, not just compared frame-by-frame:
+python -c "
+import imageio.v2 as imageio, numpy as np
+from PIL import Image
+frames = [np.array(Image.open(f'data/sharerobot_real_history9/frame_{i}.png').convert('RGB')) for i in range(30)]
+imageio.mimsave('outputs/part2p/episode_4441_real.mp4', frames, fps=5, codec='libx264', macro_block_size=2, ffmpeg_params=['-pix_fmt','yuv420p','-crf','23'])
+"
 ```
 
 On the image plane (x, y) the predicted direction matches the real continuation closely (cosine 0.97); the full 3D
@@ -222,6 +230,10 @@ which the prediction underestimates — see "Known limitations" for the 2D-vs-3D
 generally.
 
 ![Carrot already in the gripper, moving towards the one bowl: predicted path (magenta) tracks the real continuation (cyan) well in x/y](docs/expected/part2p_carrot_to_bowl.jpg)
+
+The real footage this prediction is compared against (episode_4441, all 30 downloaded frames):
+
+[![real footage, episode_4441](docs/expected/part2_episode4441_real.gif)](docs/expected/part2_episode4441_real.mp4)
 
 **Testing the idea more broadly surfaced a different, more specific pattern than "it just works when already holding
 something."** Three more ShareRobot source datasets (different robot platforms/cameras, `trajectory` split, H1-F32
@@ -497,6 +509,87 @@ sections below give the full picture, built from 14 seeds at the same configurat
 ![DaS steps/CFG ablation frames](docs/expected/part3_ablation_frames.jpg)
 
 ![Step count vs. correlation at one seed can look like a clean optimum; it does not reproduce at other seeds (see above)](docs/expected/part3_scheduler_cliff.jpg)
+
+### Other clips: a good single seed is not specific to bmx-trees, and is still not representative
+
+The same pipeline, run on two more DAVIS clips that already had a MolmoMotion prediction from Part 1's multi-example
+run (`outputs/multi/davis_flamingo`, `outputs/multi/davis_car_turn`), to check whether the instability above is
+something about the bmx-trees clip specifically. It is not: on both clips the default seed (42) gives a visibly good,
+well-tracked result, exactly like it did for bmx-trees — and on car-turn, where two more seeds were tried, both are
+clearly worse, one of them (seed 7) tracking in the *opposite* direction (r = -0.94). One good-looking seed is not
+evidence the configuration is reliable, regardless of which clip it is run on.
+
+Reproduce (from `repos/DiffusionAsShader`; build each clip's `pred_and_gt.npz` first from the existing prediction —
+same rename as `outputs/part3/pred_and_gt.npz` in Part 1, `intrinsics` instead of the cache's `K`):
+
+```
+python -c "
+import numpy as np
+d = np.load('../../outputs/multi/davis_flamingo/pred.npz')
+np.savez('../../outputs/part3_flamingo/pred_and_gt.npz', pred=d['pred'], points_2d_at_t0=d['points_2d_at_t0'], intrinsics=d['K'])
+"
+python ../../scripts_local/part3_build_tracking_video.py --t0-image ../../outputs/part3_flamingo/t0_frame.jpg \
+   --pred-npz ../../outputs/part3_flamingo/pred_and_gt.npz --out ../../outputs/part3_flamingo/tracking_video.mp4 --device cuda
+python ../../scripts_local/part3_run_das_lowvram.py --stage encode --image ../../outputs/part3_flamingo/t0_480x720.png \
+   --tracking_video ../../outputs/part3_flamingo/tracking_video.mp4 \
+   --prompt "A flamingo dips its beak into the water while walking to the right"
+python ../../scripts_local/part3_run_das_lowvram.py --stage generate --block_offload --height 480 --width 720 \
+   --num_inference_steps 10 --guidance_scale 1.0 --image ../../outputs/part3_flamingo/t0_480x720.png \
+   --tracking_video ../../outputs/part3_flamingo/tracking_video.mp4 \
+   --prompt "A flamingo dips its beak into the water while walking to the right" \
+   --output ../../outputs/part3_flamingo/generated_tracked.mp4   # --seed 42 is the default
+```
+
+(same commands with `t0_frame.jpg` from `repos/molmo-motion/examples/data/davis_car_turn/frame_t+0.jpg`,
+`davis_car_turn`/`part3_carturn` paths, caption `"A silver car follows the road and slowly turns to the right"`,
+and `--seed 7` / `--seed 123` added to the generate call for the other two runs.)
+
+**flamingo**, seed 42 (the only seed run on this clip):
+
+![flamingo frames](docs/expected/part3_flamingo_frames.jpg)
+
+The same four panels as an animation (click for the mp4):
+
+[![real / control signal / DaS trajectory / DaS static control, flamingo](docs/expected/part3_flamingo_comparison_2x2.gif)](docs/expected/part3_flamingo_comparison_2x2.mp4)
+
+DaS with the MolmoMotion trajectory:
+
+[![DaS trajectory, flamingo](docs/expected/part3_flamingo_trajectory.gif)](docs/expected/part3_flamingo_trajectory.mp4)
+
+| Metric | bmx-trees, seed 42 | flamingo, seed 42 |
+|---|---|---|
+| r (tracked vs. commanded dx) | 0.851 | **0.995** |
+| RMS error vs. commanded, px | 93.1 | **6.2** |
+| Visible frames /49 | 24 | **45** |
+| SSIM vs. real continuation | 0.366 | 0.299 |
+| PSNR vs. real continuation, dB | 13.5 | 12.0 |
+
+Source: `results/part3_metrics.json` (bmx-trees), `results/part3_flamingo_metrics.json`. The motion-following
+metrics (r, RMS error, visible frames) are much better on flamingo; the similarity-to-real-continuation metrics
+(SSIM/PSNR vs. the real DAVIS footage) are not — consistent with the main finding that the instability is
+specifically in trajectory-following, not a general video-quality issue.
+
+**car-turn**, three seeds:
+
+![car-turn frames, seed 42](docs/expected/part3_carturn_seed42_frames.jpg)
+
+The same four panels as an animation (click for the mp4):
+
+[![real / control signal / DaS trajectory / DaS static control, car-turn](docs/expected/part3_carturn_comparison_2x2.gif)](docs/expected/part3_carturn_comparison_2x2.mp4)
+
+DaS with the MolmoMotion trajectory:
+
+[![DaS trajectory, car-turn](docs/expected/part3_carturn_trajectory.gif)](docs/expected/part3_carturn_trajectory.mp4)
+
+| Seed | r | RMS error, px | Visible frames /49 | First frame lost |
+|---|---|---|---|---|
+| 42 | **0.964** | 34.4 | 40 | 21 |
+| 123 | 0.224 | 39.4 | 27 | 20 |
+| 7 | **-0.941** | 20.4 | 14 | 14 |
+
+Source: `results/part3_carturn_seeds.json`. Three seeds is far too few to estimate a median the way the 14-seed
+bmx-trees sweep does, but the spread is already the same shape: the seed that was tried first and shown above (42)
+happens to track well, one other seed is close to uncorrelated noise (0.22), and one tracks in reverse (-0.94).
 
 ## Known limitations
 
