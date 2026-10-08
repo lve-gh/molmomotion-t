@@ -1,0 +1,51 @@
+{
+  "seed42": {
+    "frame0_psnr_vs_t0": 31.962976590085383,
+    "frame0_ssim_vs_t0": 0.9136987413072202,
+    "consec_ssim_mean": 0.9563008012211167,
+    "consec_ssim_min": 0.9176532842091991,
+    "consec_absdiff_mean": 2.4005207127700614,
+    "laplacian_var_first5": 212.64029335410038,
+    "laplacian_var_last5": 195.2592861306775,
+    "rider_visible_frames(ncc>=0.5)": 40,
+    "rider_ncc_frame0": 0.9898988008499146,
+    "rider_ncc_mean": 0.5749663242271968,
+    "mean_tracked_dx_px(visible)": -30.875,
+    "mean_commanded_dx_px(visible frames)": -19.920795440673828,
+    "first_frame_rider_lost(ncc<0.5)": 21,
+    "motion_rms_err_px_vs_commanded(visible frames)": 34.43706729499561,
+    "slope_tracked_dx_px_per_frame": -1.6007426365237172,
+    "slope_commanded_dx_px_per_frame": -0.9303372868614784,
+    "pearson_r_tracked_vs_commanded_dx": 0.964210497299529,
+    "ssim_vs_real_mean": 0.5315880945953346,
+    "psnr_vs_real_mean": 20.114526885821633
+  },
+  "seed7": {
+    "seed": 7,
+    "frame0_ssim_vs_t0": 0.9118974829277268,
+    "consec_ssim_mean": 0.8955890078331398,
+    "rider_visible_frames(ncc>=0.5)": 14,
+    "rider_ncc_mean": 0.5227362580445348,
+    "first_frame_rider_lost(ncc<0.5)": 14,
+    "ssim_vs_real_mean": 0.449208272047011,
+    "psnr_vs_real_mean": 18.86468916393655,
+    "motion_rms_err_px_vs_commanded": 20.419724204898287,
+    "slope_tracked_dx_px_per_frame": 1.4439560439560442,
+    "slope_commanded_dx_px_per_frame": -0.767936633707403,
+    "pearson_r_tracked_vs_commanded_dx": -0.9412654693812428
+  },
+  "seed123": {
+    "seed": 123,
+    "frame0_ssim_vs_t0": 0.9136353651202866,
+    "consec_ssim_mean": 0.9322557807889001,
+    "rider_visible_frames(ncc>=0.5)": 27,
+    "rider_ncc_mean": 0.588644798921079,
+    "first_frame_rider_lost(ncc<0.5)": 20,
+    "ssim_vs_real_mean": 0.4991337913067708,
+    "psnr_vs_real_mean": 20.480864244726867,
+    "motion_rms_err_px_vs_commanded": 39.38162098904972,
+    "slope_tracked_dx_px_per_frame": -0.23828368326554553,
+    "slope_commanded_dx_px_per_frame": -0.9502899740279639,
+    "pearson_r_tracked_vs_commanded_dx": 0.2244834955570646
+  }
+}

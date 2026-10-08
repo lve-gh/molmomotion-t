@@ -1,0 +1,22 @@
+{
+  "frame0_psnr_vs_t0": 32.50953071526327,
+  "frame0_ssim_vs_t0": 0.945921500243617,
+  "consec_ssim_mean": 0.8751214182709353,
+  "consec_ssim_min": 0.7955231470086337,
+  "consec_absdiff_mean": 4.656084888599537,
+  "laplacian_var_first5": 306.019345921517,
+  "laplacian_var_last5": 290.62875474353683,
+  "rider_visible_frames(ncc>=0.5)": 45,
+  "rider_ncc_frame0": 0.994920015335083,
+  "rider_ncc_mean": 0.697018242612177,
+  "motion_rms_err_px_vs_commanded(visible frames)": 6.161937036967441,
+  "mean_tracked_dx_px(visible)": 75.35555555555555,
+  "mean_commanded_dx_px(visible frames)": 78.21534729003906,
+  "slope_tracked_dx_px_per_frame": 3.0160737812911735,
+  "slope_commanded_dx_px_per_frame": 3.2274871861981786,
+  "pearson_r_tracked_vs_commanded_dx": 0.9952760053477351,
+  "first_frame_rider_lost(ncc<0.5)": 45,
+  "commanded_dx_at_frame0_px(offset baked into tracking video)": 0.0,
+  "ssim_vs_real_mean": 0.2986546718273007,
+  "psnr_vs_real_mean": 12.018093293300813
+}
