@@ -144,6 +144,17 @@ the metrics are computed in 3D, not on these projections.
 
 ![real future frames](docs/expected/part1_real_future_frames.jpg)
 
+**The same two figures for the other two multi-example clips** (`car-turn`, `flamingo`; action texts in the table
+below), built with `scripts_local/part1_visualize_other_clips.py` from `outputs/multi/davis_<clip>/{pred,gt}.npz`:
+
+![car-turn input frame and query points](docs/expected/part1_carturn_fig1_input_points.jpg)
+
+![car-turn predicted vs real trajectories](docs/expected/part1_carturn_fig2_pred_vs_gt.jpg)
+
+![flamingo input frame and query points](docs/expected/part1_flamingo_fig1_input_points.jpg)
+
+![flamingo predicted vs real trajectories](docs/expected/part1_flamingo_fig2_pred_vs_gt.jpg)
+
 ### Numbers behind the "close to the authors'" claims
 
 Every qualitative statement above ("essentially equal", "heading right", "small gap") in one table, per clip, with the
